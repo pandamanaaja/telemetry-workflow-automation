@@ -4,6 +4,7 @@
 [![Google Workspace](https://img.shields.io/badge/Google%20Workspace-Sheets%20%7C%20Docs%20%7C%20Drive-4285F4?style=for-the-badge&logo=google)](https://workspace.google.com/)
 [![OCR Engine](https://img.shields.io/badge/Computer%20Vision-OCR.space%20%2B%20Heuristics-28a745?style=for-the-badge)](https://ocr.space/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+[![CI Testing](https://github.com/pandamanaaja/telemetry-workflow-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/pandamanaaja/telemetry-workflow-automation/actions/workflows/ci.yml)
 
 Production-tested, enterprise-grade workflow automation for **industrial transmitter telemetry ingestion**, **field maintenance report generation**, **large-scale anomaly detection**, and **automated data retention pipelines**.
 
