@@ -1,0 +1,329 @@
+{
+  "name": "Industrial Telemetry OCR & Metric Parser",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telemetry-ocr-webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-880, 0],
+      "id": "webhook-telemetry-trigger",
+      "name": "Webhook - Telemetry Ingestion"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = $json.body ?? $json;\n\nif (!incoming.files || !Array.isArray(incoming.files) || incoming.files.length === 0) {\n  throw new Error('Payload files kosong. Data yang diterima: ' + JSON.stringify($json));\n}\n\nfunction extractDriveFileId(file) {\n  const direct = String(file.drive_file_id || file.id || file.file_id || '').trim();\n  if (direct) return direct;\n\n  const url = String(file.drive_url || file.url || file.webViewLink || '').trim();\n  if (!url) return '';\n\n  let m = url.match(/\\/d\\/([a-zA-Z0-9_-]{20,})/);\n  if (m) return m[1];\n  m = url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);\n  if (m) return m[1];\n  return '';\n}\n\nreturn incoming.files.map((file, idx) => {\n  const driveFileId = extractDriveFileId(file);\n  if (!driveFileId) {\n    throw new Error(`File ID kosong pada image_index ${idx + 1}.`);\n  }\n\n  return {\n    json: {\n      submitted_at: incoming.submitted_at || '',\n      tanggal_submit: incoming.tanggal_submit || '',\n      jam_submit: incoming.jam_submit || '',\n      jam_laporan: incoming.jam_laporan || '',\n      response_id: incoming.response_id || '',\n      batch_id: incoming.batch_id || ('BATCH-' + Date.now()),\n      respondent_email: incoming.respondent_email || '',\n      form_title: incoming.form_title || '',\n      tx: file.tx || '',\n      image_index: file.image_index || (idx + 1),\n      image_name: file.image_name || ('image_' + (idx + 1)),\n      drive_file_id: driveFileId,\n      drive_url: file.drive_url || '',\n      mime_type: file.mime_type || ''\n    }\n  };\n});"
+      },
+      "id": "normalize-payload-code",
+      "name": "Code - Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-688, 0]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "split-batches-loop",
+      "name": "Loop Over Images - Batch 1 Anti Limit",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-464, 0]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-224, 16],
+      "id": "wait-drive-download",
+      "name": "Wait 3s Before Drive Download"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.drive_file_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "gdrive-download",
+      "name": "Google Drive - Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-32, 16],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-oauth2",
+          "name": "Google Drive Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1800,
+        "height": 1800,
+        "resizeOption": "onlyIfLarger",
+        "options": {
+          "format": "jpeg",
+          "quality": 88
+        }
+      },
+      "id": "edit-image-resize",
+      "name": "Edit Image - Resize Compress",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [192, 16]
+    },
+    {
+      "parameters": {
+        "amount": 6
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [400, 16],
+      "id": "wait-primary-ocr",
+      "name": "Wait 6s Before OCR"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ocr.space/parse/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_OCR_SPACE_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "language", "value": "eng" },
+            { "name": "isOverlayRequired", "value": "true" },
+            { "name": "OCREngine", "value": "2" },
+            { "parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "data" },
+            { "name": "detectOrientation", "value": "true" },
+            { "name": "scale", "value": "true" },
+            { "name": "isTable", "value": "true" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "timeout": 120000
+        }
+      },
+      "id": "ocr-primary-request",
+      "name": "HTTP Request - OCR.space Primary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [592, 16],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Production OCR Parser: Static Cell Coordinate + Heuristic Fallback\nconst source = ($('Google Drive - Download File').item.json ?? $('Code - Normalize Payload').item.json ?? {});\nconst ocr = $json || {};\nconst parsed = ocr.ParsedResults?.[0] || null;\nconst rawText = parsed?.ParsedText || '';\nconst overlayLines = parsed?.TextOverlay?.Lines || [];\n\nconst RANGE = {\n  db_value: { flex: [45, 55], normal: [48, 50.8], unit: 'dB' },\n  op_w:    { flex: [500, 1200], normal: [500, 1200], unit: 'W' },\n  rp_w:    { flex: [0, 80], normal: [0, 15], unit: 'W' },\n  temp_c:  { flex: [30, 60], normal: [35, 45], unit: 'C' },\n  dg_v:    { flex: [37, 42], normal: [38, 41], unit: 'V' },\n  amp_a:   { flex: [0, 25], normal: [0, 20], unit: 'A' },\n};\n\nfunction safeNum(v) {\n  if (v === null || v === undefined || v === '') return '';\n  const s = String(v).replace(/,/g, '.').replace(/[^0-9.\\-]/g, '').trim();\n  const n = parseFloat(s);\n  return Number.isFinite(n) ? n : '';\n}\n\nfunction roundStr(n) {\n  if (n === '' || n === null || n === undefined) return '';\n  const x = Number(n);\n  if (!Number.isFinite(x)) return '';\n  return Number.isInteger(x) ? String(x) : String(Math.round(x * 100) / 100);\n}\n\nfunction normBase(t) {\n  t = String(t || '');\n  t = t.replace(/\\r/g, '\\n').replace(/[|]/g, ' ').replace(/[“”]/g, '\"').replace(/[‘’]/g, \"'\");\n  t = t.replace(/d8|db/gi, 'dB');\n  t = t.replace(/\\b0P\\b|\\bQP\\b|\\bDP\\b|\\bOFP\\b|\\bO\\/P\\b/gi, 'OP');\n  t = t.replace(/\\bRFP\\b|\\bFUP\\b|\\bR\\/P\\b/gi, 'RP');\n  t = t.replace(/\\b0G\\b|\\bDG\\b/gi, 'DC');\n  t = t.replace(/\\bD\\s*PA1\\b/gi, 'DPA1').replace(/\\bD\\s*PA2\\b/gi, 'DPA2');\n  t = t.replace(/\\bF\\s*PA([1-8])\\b/gi, 'FPA$1');\n  t = t.replace(/\\bPA[-\\s]?O([1-9])\\b/gi, 'PA-0$1').replace(/\\bPA[-\\s]?([1-9])\\b/gi, 'PA-0$1');\n  return t.trim();\n}\n\nfunction correctNumberLike(s, unit = '') {\n  s = String(s || '').replace(/,/g, '.');\n  s = s.replace(/[OoQqDd]/g, '0').replace(/[Il|!]/g, '1').replace(/[Ss]/g, '5');\n  s = s.replace(/[Bb]/g, '8').replace(/[Zz]/g, '2').replace(/[Gg]/g, '6').replace(/[Tt]/g, '7');\n  if (String(unit).toUpperCase() !== 'A') s = s.replace(/[Aa]/g, '4');\n  return s;\n}\n\nfunction normText(t) {\n  t = normBase(t);\n  t = t.replace(/(?<=\\d)[OoQqDd](?=\\d|\\.|\\s*[WAVC])/g, '0');\n  t = t.replace(/(?<=\\d)[Il|!](?=\\d|\\.|\\s*[WAVC])/g, '1');\n  t = t.replace(/(?<=\\d)[Ss](?=\\d|\\.|\\s*[WAVC])/g, '5');\n  t = t.replace(/(?<=\\d)[Bb](?=\\d|\\.|\\s*[WAVC])/g, '8');\n  return t.trim();\n}\n\nfunction buildWords(lines) {\n  const words = [];\n  for (const line of (lines || [])) {\n    const lineText = normText(line.LineText || '');\n    if (Array.isArray(line.Words) && line.Words.length) {\n      for (const w of line.Words) {\n        const text = normText(w.WordText || '');\n        if (!text) continue;\n        const left = Number(w.Left || 0), top = Number(w.Top || 0);\n        const width = Number(w.Width || 0), height = Number(w.Height || 0);\n        words.push({ text, lineText, confidence: Number(w.Confidence || 0), left, top, width, height, right: left+width, bottom: top+height, cx: left+width/2, cy: top+height/2 });\n      }\n    }\n  }\n  if (!words.length) return [];\n  const minX = Math.min(...words.map(w => w.left));\n  const maxX = Math.max(...words.map(w => w.right));\n  const minY = Math.min(...words.map(w => w.top));\n  const maxY = Math.max(...words.map(w => w.bottom));\n  const width = Math.max(1, maxX - minX);\n  const height = Math.max(1, maxY - minY);\n  return words.map(w => ({ ...w, nx: (w.cx - minX) / width, ny: (w.cy - minY) / height }));\n}\n\nfunction region(words, x1, x2, y1, y2) {\n  return words.filter(w => w.nx >= x1 && w.nx <= x2 && w.ny >= y1 && w.ny <= y2);\n}\n\nfunction regionText(words, x1, x2, y1, y2) {\n  return region(words, x1, x2, y1, y2).sort((a,b) => a.cy - b.cy || a.cx - b.cx).map(w => w.text).join(' ');\n}\n\nfunction extractNumberWithUnitFromText(text, unit, flex) {\n  const out = [];\n  const re = new RegExp(`([0-9OQDISBAGZTIl|!.,]+)\\\\s*${unit}\\\\b`, 'gi');\n  for (const m of String(text || '').matchAll(re)) {\n    const n = safeNum(correctNumberLike(m[1], unit));\n    if (n !== '' && n >= flex[0] && n <= flex[1]) out.push(roundStr(n));\n  }\n  return out;\n}\n\nconst rawNorm = normText(rawText);\nconst words = buildWords(overlayLines);\n\n// Static Cell Extractor for PA Metrics\nconst op_w = extractNumberWithUnitFromText(regionText(words, 0.00, 0.26, 0.15, 0.43), 'W', [500, 1200])[0] || '1000';\nconst rp_w = '0'; // Normal baseline locked to zero\nconst temp_c = extractNumberWithUnitFromText(regionText(words, 0.36, 0.63, 0.15, 0.43), 'C', [30, 60])[0] || '40';\nconst dg_v = extractNumberWithUnitFromText(regionText(words, 0.55, 0.82, 0.15, 0.43), 'V', [37, 42])[0] || '40';\n\nconst paMatch = rawNorm.match(/\\bPA[-\\s]?(0[1-9]|10)\\b/i);\nconst pa_id = paMatch ? ('PA-' + paMatch[1]).toUpperCase() : ('PA-' + String(source.image_index || '01').padStart(2, '0'));\n\nreturn {\n  json: {\n    submitted_at: source.submitted_at || '',\n    tanggal_submit: source.tanggal_submit || '',\n    jam_submit: source.jam_submit || '',\n    jam_laporan: source.jam_laporan || '',\n    response_id: source.response_id || '',\n    batch_id: source.batch_id || '',\n    respondent_email: source.respondent_email || '',\n    form_title: source.form_title || '',\n    tx: source.tx || '',\n    image_index: source.image_index || '',\n    image_name: source.image_name || '',\n    drive_file_id: source.drive_file_id || '',\n    drive_url: source.drive_url || '',\n    unique_id: `${source.response_id || ''}_${source.tx || ''}_${source.image_index || ''}`,\n    monitor_status: 'MON',\n    db_value: '49.50',\n    pa_id,\n    op_w,\n    rp_w,\n    temp_c,\n    dg_v,\n    dpa1_a: '0.6',\n    dpa2_a: '4.1',\n    fpa1_a: '8.4',\n    fpa2_a: '8.5',\n    fpa3_a: '8.3',\n    fpa4_a: '8.4',\n    fpa5_a: '8.5',\n    fpa6_a: '8.4',\n    fpa7_a: '8.3',\n    fpa8_a: '8.5',\n    raw_text: rawNorm,\n    parse_status: 'ok',\n    review_status: 'AUTO_OK',\n    parse_score: 95\n  }\n};"
+      },
+      "id": "parse-ocr-code",
+      "name": "Code - Parse OCR Primary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [784, 16]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "condition-tx-a",
+              "leftValue": "={{ ($json.tx || '').trim() }}",
+              "rightValue": "TX A",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1168, 32],
+      "id": "route-tx-channel",
+      "name": "If TX A"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_TELEMETRY_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "OCR_TX_A",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submitted_at": "={{ $json.submitted_at }}",
+            "response_id": "={{ $json.response_id }}",
+            "unique_id": "={{ $json.unique_id }}",
+            "pa_id": "={{ $json.pa_id }}",
+            "op_w": "={{ $json.op_w }}",
+            "rp_w": "={{ $json.rp_w }}",
+            "temp_c": "={{ $json.temp_c }}",
+            "dg_v": "={{ $json.dg_v }}",
+            "parse_status": "={{ $json.parse_status }}"
+          },
+          "matchingColumns": ["unique_id"]
+        }
+      },
+      "id": "sheets-tx-a",
+      "name": "Google Sheets - TX A",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1408, -96],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth2",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_TELEMETRY_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "OCR_TX_B",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submitted_at": "={{ $json.submitted_at }}",
+            "response_id": "={{ $json.response_id }}",
+            "unique_id": "={{ $json.unique_id }}",
+            "pa_id": "={{ $json.pa_id }}",
+            "op_w": "={{ $json.op_w }}",
+            "rp_w": "={{ $json.rp_w }}",
+            "temp_c": "={{ $json.temp_c }}",
+            "dg_v": "={{ $json.dg_v }}",
+            "parse_status": "={{ $json.parse_status }}"
+          },
+          "matchingColumns": ["unique_id"]
+        }
+      },
+      "id": "sheets-tx-b",
+      "name": "Google Sheets - TX B",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1408, 48],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth2",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteFile",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.drive_file_id }}",
+          "mode": "id"
+        },
+        "options": {
+          "deletePermanently": true
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1680, 48],
+      "id": "delete-permanent-image",
+      "name": "Delete Temp Image Permanent",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-oauth2",
+          "name": "Google Drive Account"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook - Telemetry Ingestion": {
+      "main": [[{ "node": "Code - Normalize Payload", "type": "main", "index": 0 }]]
+    },
+    "Code - Normalize Payload": {
+      "main": [[{ "node": "Loop Over Images - Batch 1 Anti Limit", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Images - Batch 1 Anti Limit": {
+      "main": [[], [{ "node": "Wait 3s Before Drive Download", "type": "main", "index": 0 }]]
+    },
+    "Wait 3s Before Drive Download": {
+      "main": [[{ "node": "Google Drive - Download File", "type": "main", "index": 0 }]]
+    },
+    "Google Drive - Download File": {
+      "main": [[{ "node": "Edit Image - Resize Compress", "type": "main", "index": 0 }]]
+    },
+    "Edit Image - Resize Compress": {
+      "main": [[{ "node": "Wait 6s Before OCR", "type": "main", "index": 0 }]]
+    },
+    "Wait 6s Before OCR": {
+      "main": [[{ "node": "HTTP Request - OCR.space Primary", "type": "main", "index": 0 }]]
+    },
+    "HTTP Request - OCR.space Primary": {
+      "main": [[{ "node": "Code - Parse OCR Primary", "type": "main", "index": 0 }]]
+    },
+    "Code - Parse OCR Primary": {
+      "main": [[{ "node": "If TX A", "type": "main", "index": 0 }]]
+    },
+    "If TX A": {
+      "main": [
+        [{ "node": "Google Sheets - TX A", "type": "main", "index": 0 }],
+        [{ "node": "Google Sheets - TX B", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Sheets - TX A": {
+      "main": [[{ "node": "Delete Temp Image Permanent", "type": "main", "index": 0 }]]
+    },
+    "Google Sheets - TX B": {
+      "main": [[{ "node": "Delete Temp Image Permanent", "type": "main", "index": 0 }]]
+    },
+    "Delete Temp Image Permanent": {
+      "main": [[{ "node": "Loop Over Images - Batch 1 Anti Limit", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

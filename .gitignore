@@ -1,0 +1,21 @@
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Secret files
+.env
+.env.local
+.env.production
+*.secret
+*.pem
+*.key
+
+# Google Apps Script clasp
+.clasp.json
+.claspignore
+
+# OS metadata
+.DS_Store
+Thumbs.db

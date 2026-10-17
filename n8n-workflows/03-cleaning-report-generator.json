@@ -1,0 +1,125 @@
+{
+  "name": "Cleaning Report Generator & Sheet Synchronizer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cleaning-report-webhook",
+        "options": {}
+      },
+      "id": "webhook-cleaning-trigger",
+      "name": "Webhook - Ingest Cleaning Visit",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [416, -144]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json.body || $json || {};\nconst row = payload.data || {};\n\nfunction hasValue(v) {\n  return v !== undefined && v !== null && String(v).trim() !== '';\n}\n\nfunction getField(name) {\n  const keys = Object.keys(row);\n  if (Object.prototype.hasOwnProperty.call(row, name) && hasValue(row[name])) {\n    return row[name];\n  }\n  const matched = keys.filter(k => String(k).trim().toLowerCase() === String(name).trim().toLowerCase());\n  for (const k of matched) {\n    if (hasValue(row[k])) return row[k];\n  }\n  return '';\n}\n\nfunction getFileId(url) {\n  if (!url) return '';\n  const match = String(url).match(/[-\\w]{25,}/);\n  return match ? match[0] : '';\n}\n\nconst lokasi = getField('Site') || getField('Lokasi Site') || 'SITE';\nconst kegiatan = getField('Kegiatan') || 'Rutin Cleaning';\nconst teknisi = getField('Nama Teknisi') || 'Teknisi Field';\n\nconst reportName = `Laporan Cleaning ${lokasi} ${Date.now()}`;\n\nreturn [{\n  json: {\n    config: {\n      templateDocId: 'YOUR_CLEANING_TEMPLATE_DOC_ID',\n      outputDocFolderId: 'YOUR_CLEANING_OUTPUT_FOLDER_ID'\n    },\n    reportName,\n    textPlaceholders: {\n      '<<Lokasi>>': lokasi,\n      '<<Kegiatan>>': kegiatan,\n      '<<Teknisi>>': teknisi\n    },\n    matchTimestamp: getField('Timestamp') || new Date().toISOString(),\n    executionLockId: payload.executionLockId || ''\n  }\n}];"
+      },
+      "id": "prepare-cleaning-data",
+      "name": "Prepare Incoming Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [672, -144]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{$json.config.templateDocId}}/copy?supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $json.reportName, parents: [$json.config.outputDocFolderId] } }}",
+        "options": {}
+      },
+      "id": "copy-doc-template",
+      "name": "Copy Template Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [928, -144],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://www.googleapis.com/drive/v3/files/{{$json.id}}/export?mimeType=application/pdf",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "export-pdf-binary",
+      "name": "Export PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [416, 100],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_CLEANING_MASTER_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Form Responses 1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status Laporan": "DONE",
+            "Execution Lock ID": "={{$json.executionLockId}}"
+          },
+          "matchingColumns": ["Execution Lock ID"]
+        }
+      },
+      "id": "update-sheet-status",
+      "name": "Update Sheet Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [700, 100],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth2",
+          "name": "Google Sheets Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Ingest Cleaning Visit": {
+      "main": [[{ "node": "Prepare Incoming Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Incoming Data": {
+      "main": [[{ "node": "Copy Template Doc", "type": "main", "index": 0 }]]
+    },
+    "Copy Template Doc": {
+      "main": [[{ "node": "Export PDF", "type": "main", "index": 0 }]]
+    },
+    "Export PDF": {
+      "main": [[{ "node": "Update Sheet Status", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

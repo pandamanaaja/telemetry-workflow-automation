@@ -1,0 +1,178 @@
+{
+  "name": "Site Visit Report Generator - Dynamic Docs & Smart Image Sizing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "autocrat-site-report",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-site-report",
+      "name": "Webhook - Ingest Form Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\n\nconst cfg = {\n  templateDocId: body.config?.templateDocId || 'YOUR_GOOGLE_DOC_TEMPLATE_ID',\n  outputDocFolderId: body.config?.outputDocFolderId || 'YOUR_OUTPUT_PDF_FOLDER_ID',\n};\n\nfunction safeText(value) {\n  return String(value || '').trim().replace(/[\\\\/:*?\"<>|]/g, '').replace(/\\s+/g, ' ');\n}\n\nfunction formatTanggal(value) {\n  return String(value || '').trim().replace(/\\//g, '-').replace(/\\s+/g, ' ');\n}\n\nconst namaSite = safeText(body.textPlaceholders?.['<<Lokasi Site>>'] || 'SITE');\nconst kunjunganKe = safeText(body.textPlaceholders?.['<<Keterangan Kunjungan>>'] || 'Kunjungan');\nconst tanggalKunjungan = formatTanggal(body.textPlaceholders?.['<<Tanggal Kunjungan>>'] || '');\n\nconst reportName = safeText(\n  body.reportName || `Laporan Visit ${namaSite} ${kunjunganKe} ${tanggalKunjungan}`.trim()\n);\n\nconst recipientEmail = body.recipientEmail || body.textPlaceholders?.['<<Email>>'] || '';\nconst textPlaceholders = body.textPlaceholders || {};\nconst imagePlaceholders = Array.isArray(body.imagePlaceholders) ? body.imagePlaceholders : [];\n\nconst cleanImages = imagePlaceholders\n  .filter(x => x && x.placeholder)\n  .map(x => ({\n    placeholder: String(x.placeholder || '').trim(),\n    fileId: String(x.fileId || '').trim(),\n    publicImageUrl: String(x.publicImageUrl || '').trim(),\n  }));\n\nreturn [{\n  json: {\n    config: cfg,\n    reportName,\n    recipientEmail,\n    textPlaceholders,\n    imagePlaceholders: cleanImages,\n    originalPayload: body,\n  }\n}];"
+      },
+      "id": "normalize-site-payload",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [176, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{$json.config.templateDocId}}/copy?supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $json.reportName, parents: [$json.config.outputDocFolderId] } }}",
+        "options": {}
+      },
+      "id": "copy-template-doc",
+      "name": "Copy Template Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [336, 0],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const textPlaceholders = $items('Normalize Payload', 0, 0)[0].json.textPlaceholders || {};\nconst requests = [];\n\nfor (const [placeholder, value] of Object.entries(textPlaceholders)) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: placeholder, matchCase: true },\n      replaceText: value == null ? '' : String(value),\n    },\n  });\n}\n\nreturn [{\n  json: {\n    documentId: $json.id,\n    docUrl: `https://docs.google.com/document/d/${$json.id}/edit`,\n    reportName: $items('Normalize Payload', 0, 0)[0].json.reportName,\n    recipientEmail: $items('Normalize Payload', 0, 0)[0].json.recipientEmail,\n    imagePlaceholders: $items('Normalize Payload', 0, 0)[0].json.imagePlaceholders,\n    requests,\n    originalPayload: $items('Normalize Payload', 0, 0)[0].json.originalPayload,\n  }\n}];"
+      },
+      "id": "build-text-requests",
+      "name": "Build Text Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [512, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{$json.documentId}}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ requests: $node[\"Build Text Requests\"].json.requests }) }}",
+        "options": {}
+      },
+      "id": "replace-text-placeholders",
+      "name": "Replace Text Placeholders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [688, 0],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://docs.googleapis.com/v1/documents/{{$items('Build Text Requests', 0, 0)[0].json.documentId}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {}
+      },
+      "id": "get-document-structure",
+      "name": "Get Document Structure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [864, 0],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const document = $json;\nconst base = $items('Build Text Requests', 0, 0)[0].json;\nconst imagePlaceholders = Array.isArray(base.imagePlaceholders) ? base.imagePlaceholders : [];\nconst textElements = [];\n\nfunction scan(elements = []) {\n  for (const el of elements) {\n    if (el.paragraph?.elements) {\n      for (const pe of el.paragraph.elements) {\n        const content = pe.textRun?.content || '';\n        if (content) {\n          textElements.push({\n            startIndex: pe.startIndex,\n            endIndex: pe.endIndex,\n            content,\n          });\n        }\n      }\n    }\n    if (el.table?.tableRows) {\n      for (const row of el.table.tableRows || []) {\n        for (const cell of row.tableCells || []) {\n          scan(cell.content || []);\n        }\n      }\n    }\n    if (el.tableOfContents?.content) {\n      scan(el.tableOfContents.content || []);\n    }\n  }\n}\n\nscan(document.body?.content || []);\n\nconst allTokens = [];\nfor (const t of textElements) {\n  const regex = /<<[^>]+>>/g;\n  let m;\n  while ((m = regex.exec(t.content)) !== null) {\n    allTokens.push({\n      text: m[0],\n      startIndex: t.startIndex + m.index,\n      endIndex: t.startIndex + m.index + m[0].length,\n    });\n  }\n}\n\nconst imageMap = {};\nfor (const item of imagePlaceholders) {\n  if (item?.placeholder) {\n    imageMap[item.placeholder] = item.publicImageUrl || '';\n  }\n}\n\nconst requests = [];\nallTokens.sort((a, b) => b.startIndex - a.startIndex);\n\nfor (const token of allTokens) {\n  const imageUrl = imageMap[token.text];\n\n  requests.push({\n    deleteContentRange: {\n      range: {\n        startIndex: token.startIndex,\n        endIndex: token.endIndex,\n      },\n    },\n  });\n\n  if (imageUrl) {\n    requests.push({\n      insertInlineImage: {\n        location: { index: token.startIndex },\n        uri: imageUrl,\n        objectSize: {\n          width: { magnitude: 95, unit: 'PT' },\n          height: { magnitude: 95, unit: 'PT' },\n        },\n      },\n    });\n  }\n}\n\nreturn [{\n  json: {\n    documentId: base.documentId,\n    docUrl: base.docUrl,\n    reportName: base.reportName,\n    recipientEmail: base.recipientEmail,\n    requests,\n  },\n}];"
+      },
+      "id": "build-image-requests",
+      "name": "Build Image Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1056, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{$json.documentId}}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ requests: $node[\"Build Image Requests\"].json.requests }) }}",
+        "options": {}
+      },
+      "id": "insert-images-batch",
+      "name": "Insert Images Batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1232, 0],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({\n  ok: true,\n  documentId: $node[\"Build Image Requests\"].json.documentId,\n  docUrl: $node[\"Build Image Requests\"].json.docUrl,\n  reportName: $node[\"Build Image Requests\"].json.reportName\n}) }}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1424, 0]
+    }
+  ],
+  "connections": {
+    "Webhook - Ingest Form Data": {
+      "main": [[{ "node": "Normalize Payload", "type": "main", "index": 0 }]]
+    },
+    "Normalize Payload": {
+      "main": [[{ "node": "Copy Template Doc", "type": "main", "index": 0 }]]
+    },
+    "Copy Template Doc": {
+      "main": [[{ "node": "Build Text Requests", "type": "main", "index": 0 }]]
+    },
+    "Build Text Requests": {
+      "main": [[{ "node": "Replace Text Placeholders", "type": "main", "index": 0 }]]
+    },
+    "Replace Text Placeholders": {
+      "main": [[{ "node": "Get Document Structure", "type": "main", "index": 0 }]]
+    },
+    "Get Document Structure": {
+      "main": [[{ "node": "Build Image Requests", "type": "main", "index": 0 }]]
+    },
+    "Build Image Requests": {
+      "main": [[{ "node": "Insert Images Batch", "type": "main", "index": 0 }]]
+    },
+    "Insert Images Batch": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
