@@ -8,7 +8,8 @@ describe('n8n Workflow Structure & Integrity Validation', () => {
   const workflowFiles = [
     '01-industrial-telemetry-ocr.json',
     '02-site-visit-report-autocrat.json',
-    '03-cleaning-report-generator.json'
+    '03-cleaning-report-generator.json',
+    '04-pln-bill-ocr-extractor.json'
   ];
 
   workflowFiles.forEach(fileName => {
