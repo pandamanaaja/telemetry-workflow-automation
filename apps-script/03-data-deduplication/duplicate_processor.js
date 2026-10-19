@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ==============================================================================
  * OTOMATISASI: WARNAI DAN HAPUS DATA DUPLIKAT (HIGH PERFORMANCE & ANTI-LAG)
  * Kriteria Duplikat: Tanggal (Kolom A) + Jam (Kolom B) + Teknisi (Kolom C) SAMA
