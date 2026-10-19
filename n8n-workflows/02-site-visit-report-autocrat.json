@@ -1,5 +1,5 @@
-{
-  "name": "Site Visit Report Generator - Dynamic Docs & Smart Image Sizing",
+﻿{
+  "name": "N8N Visit Rutin 5 Foto [Outh Method] - Optimized",
   "nodes": [
     {
       "parameters": {
@@ -8,21 +8,28 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-site-report",
-      "name": "Webhook - Ingest Form Data",
+      "id": "8344f242-5e20-4335-8122-8c2f3f8d2bbf",
+      "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "YOUR_WEBHOOK_UUID"
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? $json;\n\nconst cfg = {\n  templateDocId: body.config?.templateDocId || 'YOUR_GOOGLE_DOC_TEMPLATE_ID',\n  outputDocFolderId: body.config?.outputDocFolderId || 'YOUR_OUTPUT_PDF_FOLDER_ID',\n};\n\nfunction safeText(value) {\n  return String(value || '').trim().replace(/[\\\\/:*?\"<>|]/g, '').replace(/\\s+/g, ' ');\n}\n\nfunction formatTanggal(value) {\n  return String(value || '').trim().replace(/\\//g, '-').replace(/\\s+/g, ' ');\n}\n\nconst namaSite = safeText(body.textPlaceholders?.['<<Lokasi Site>>'] || 'SITE');\nconst kunjunganKe = safeText(body.textPlaceholders?.['<<Keterangan Kunjungan>>'] || 'Kunjungan');\nconst tanggalKunjungan = formatTanggal(body.textPlaceholders?.['<<Tanggal Kunjungan>>'] || '');\n\nconst reportName = safeText(\n  body.reportName || `Laporan Visit ${namaSite} ${kunjunganKe} ${tanggalKunjungan}`.trim()\n);\n\nconst recipientEmail = body.recipientEmail || body.textPlaceholders?.['<<Email>>'] || '';\nconst textPlaceholders = body.textPlaceholders || {};\nconst imagePlaceholders = Array.isArray(body.imagePlaceholders) ? body.imagePlaceholders : [];\n\nconst cleanImages = imagePlaceholders\n  .filter(x => x && x.placeholder)\n  .map(x => ({\n    placeholder: String(x.placeholder || '').trim(),\n    fileId: String(x.fileId || '').trim(),\n    publicImageUrl: String(x.publicImageUrl || '').trim(),\n  }));\n\nreturn [{\n  json: {\n    config: cfg,\n    reportName,\n    recipientEmail,\n    textPlaceholders,\n    imagePlaceholders: cleanImages,\n    originalPayload: body,\n  }\n}];"
+        "jsCode": "let body = $json.body ?? $json;\nif (typeof body === 'string') {\n  try {\n    body = JSON.parse(body);\n  } catch (e) {}\n}\n\nconst cfg = {\n  templateDocId: body.config?.templateDocId || 'YOUR_TEMPLATE_DOC_ID',\n  outputDocFolderId: body.config?.outputDocFolderId || 'YOUR_OUTPUT_DOC_FOLDER_ID',\n};\n\nfunction safeText(value) {\n  return String(value || '')\n    .trim()\n    .replace(/[\\\\/:*?\"<>|]/g, '')\n    .replace(/\\s+/g, ' ');\n}\n\nfunction formatTanggal(value) {\n  return String(value || '')\n    .trim()\n    .replace(/\\//g, '-')\n    .replace(/\\s+/g, ' ');\n}\n\nconst namaSite = safeText(body.textPlaceholders?.['<<Lokasi Site>>'] || 'SITE');\nconst kunjunganKe = safeText(body.textPlaceholders?.['<<Keterangan Kunjungan>>'] || 'Kunjungan');\nconst tanggalKunjungan = formatTanggal(body.textPlaceholders?.['<<Tanggal Kunjungan>>'] || '');\n\nconst reportName = safeText(\n  body.reportName || `Laporan Visit ${namaSite} ${kunjunganKe} ${tanggalKunjungan}`.trim()\n);\n\nconst recipientEmail = body.recipientEmail || body.textPlaceholders?.['<<Email>>'] || '';\nconst textPlaceholders = body.textPlaceholders || {};\nconst imagePlaceholders = Array.isArray(body.imagePlaceholders) ? body.imagePlaceholders : [];\n\nif (!cfg.templateDocId) {\n  throw new Error('templateDocId belum diisi.');\n}\nif (!cfg.outputDocFolderId) {\n  throw new Error('outputDocFolderId belum diisi.');\n}\n\nconst cleanImages = imagePlaceholders\n  .filter(x => x && x.placeholder)\n  .map(x => {\n    const fileId = String(x.fileId || '').trim();\n    let publicImageUrl = String(x.publicImageUrl || '').trim();\n    \n    // Fallback otomatis jika hanya fileId Google Drive yang dikirim\n    if (!publicImageUrl && fileId) {\n      publicImageUrl = `https://lh3.googleusercontent.com/d/${fileId}`;\n    }\n\n    return {\n      placeholder: String(x.placeholder || '').trim(),\n      fileId,\n      publicImageUrl,\n    };\n  });\n\nreturn [{\n  json: {\n    config: cfg,\n    reportName,\n    recipientEmail,\n    textPlaceholders,\n    imagePlaceholders: cleanImages,\n    originalPayload: body,\n  }\n}];"
       },
-      "id": "normalize-site-payload",
+      "id": "711f7a9c-c2c7-49aa-80d1-58f4010e65ed",
       "name": "Normalize Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [176, 0]
+      "position": [
+        176,
+        0
+      ]
     },
     {
       "parameters": {
@@ -32,14 +39,17 @@
         "nodeCredentialType": "googleOAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { name: $json.reportName, parents: [$json.config.outputDocFolderId] } }}",
+        "jsonBody": "={{ JSON.stringify({\n  name: $json.reportName,\n  parents: [$json.config.outputDocFolderId]\n}) }}",
         "options": {}
       },
-      "id": "copy-template-doc",
+      "id": "e5638ae7-45d4-4388-b135-d20f8c0b5b2b",
       "name": "Copy Template Doc",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [336, 0],
+      "position": [
+        336,
+        0
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "google-oauth2-credentials",
@@ -49,13 +59,16 @@
     },
     {
       "parameters": {
-        "jsCode": "const textPlaceholders = $items('Normalize Payload', 0, 0)[0].json.textPlaceholders || {};\nconst requests = [];\n\nfor (const [placeholder, value] of Object.entries(textPlaceholders)) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: placeholder, matchCase: true },\n      replaceText: value == null ? '' : String(value),\n    },\n  });\n}\n\nreturn [{\n  json: {\n    documentId: $json.id,\n    docUrl: `https://docs.google.com/document/d/${$json.id}/edit`,\n    reportName: $items('Normalize Payload', 0, 0)[0].json.reportName,\n    recipientEmail: $items('Normalize Payload', 0, 0)[0].json.recipientEmail,\n    imagePlaceholders: $items('Normalize Payload', 0, 0)[0].json.imagePlaceholders,\n    requests,\n    originalPayload: $items('Normalize Payload', 0, 0)[0].json.originalPayload,\n  }\n}];"
+        "jsCode": "const textPlaceholders = $items('Normalize Payload', 0, 0)[0].json.textPlaceholders || {};\nconst requests = [];\n\nfor (const [placeholder, value] of Object.entries(textPlaceholders)) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: placeholder, matchCase: true },\n      replaceText: value == null ? '' : String(value),\n    },\n  });\n}\n\n// Pengaman agar Google Docs API tidak 400 jika textPlaceholders kosong\nif (requests.length === 0) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: '[[NOOP_EMPTY_TEXT]]', matchCase: true },\n      replaceText: '',\n    },\n  });\n}\n\nreturn [{\n  json: {\n    documentId: $json.id,\n    docUrl: `https://docs.google.com/document/d/${$json.id}/edit`,\n    reportName: $items('Normalize Payload', 0, 0)[0].json.reportName,\n    recipientEmail: $items('Normalize Payload', 0, 0)[0].json.recipientEmail,\n    imagePlaceholders: $items('Normalize Payload', 0, 0)[0].json.imagePlaceholders,\n    requests,\n    originalPayload: $items('Normalize Payload', 0, 0)[0].json.originalPayload,\n  }\n}];"
       },
-      "id": "build-text-requests",
+      "id": "0e1a36a7-ac02-4cf3-b91b-20754f06ecbf",
       "name": "Build Text Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [512, 0]
+      "position": [
+        512,
+        0
+      ]
     },
     {
       "parameters": {
@@ -64,16 +77,18 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleOAuth2Api",
         "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ requests: $node[\"Build Text Requests\"].json.requests }) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  requests: $node[\"Build Text Requests\"].json.requests\n}) }}",
         "options": {}
       },
-      "id": "replace-text-placeholders",
+      "id": "7347cc25-619d-44cc-a9dc-815d670d8bf9",
       "name": "Replace Text Placeholders",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [688, 0],
+      "position": [
+        688,
+        0
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "google-oauth2-credentials",
@@ -88,11 +103,14 @@
         "nodeCredentialType": "googleOAuth2Api",
         "options": {}
       },
-      "id": "get-document-structure",
+      "id": "4686f9dd-4bbf-456f-bc15-7008f9de6aa3",
       "name": "Get Document Structure",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [864, 0],
+      "position": [
+        864,
+        0
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "google-oauth2-credentials",
@@ -102,13 +120,16 @@
     },
     {
       "parameters": {
-        "jsCode": "const document = $json;\nconst base = $items('Build Text Requests', 0, 0)[0].json;\nconst imagePlaceholders = Array.isArray(base.imagePlaceholders) ? base.imagePlaceholders : [];\nconst textElements = [];\n\nfunction scan(elements = []) {\n  for (const el of elements) {\n    if (el.paragraph?.elements) {\n      for (const pe of el.paragraph.elements) {\n        const content = pe.textRun?.content || '';\n        if (content) {\n          textElements.push({\n            startIndex: pe.startIndex,\n            endIndex: pe.endIndex,\n            content,\n          });\n        }\n      }\n    }\n    if (el.table?.tableRows) {\n      for (const row of el.table.tableRows || []) {\n        for (const cell of row.tableCells || []) {\n          scan(cell.content || []);\n        }\n      }\n    }\n    if (el.tableOfContents?.content) {\n      scan(el.tableOfContents.content || []);\n    }\n  }\n}\n\nscan(document.body?.content || []);\n\nconst allTokens = [];\nfor (const t of textElements) {\n  const regex = /<<[^>]+>>/g;\n  let m;\n  while ((m = regex.exec(t.content)) !== null) {\n    allTokens.push({\n      text: m[0],\n      startIndex: t.startIndex + m.index,\n      endIndex: t.startIndex + m.index + m[0].length,\n    });\n  }\n}\n\nconst imageMap = {};\nfor (const item of imagePlaceholders) {\n  if (item?.placeholder) {\n    imageMap[item.placeholder] = item.publicImageUrl || '';\n  }\n}\n\nconst requests = [];\nallTokens.sort((a, b) => b.startIndex - a.startIndex);\n\nfor (const token of allTokens) {\n  const imageUrl = imageMap[token.text];\n\n  requests.push({\n    deleteContentRange: {\n      range: {\n        startIndex: token.startIndex,\n        endIndex: token.endIndex,\n      },\n    },\n  });\n\n  if (imageUrl) {\n    requests.push({\n      insertInlineImage: {\n        location: { index: token.startIndex },\n        uri: imageUrl,\n        objectSize: {\n          width: { magnitude: 95, unit: 'PT' },\n          height: { magnitude: 95, unit: 'PT' },\n        },\n      },\n    });\n  }\n}\n\nreturn [{\n  json: {\n    documentId: base.documentId,\n    docUrl: base.docUrl,\n    reportName: base.reportName,\n    recipientEmail: base.recipientEmail,\n    requests,\n  },\n}];"
+        "jsCode": "const document = $json;\nconst base = $items('Build Text Requests', 0, 0)[0].json;\nconst imagePlaceholders = Array.isArray(base.imagePlaceholders) ? base.imagePlaceholders : [];\n\nconst textElements = [];\n\nfunction scan(elements = []) {\n  for (const el of elements) {\n    if (el.paragraph?.elements) {\n      for (const pe of el.paragraph.elements) {\n        const content = pe.textRun?.content || '';\n        if (content) {\n          textElements.push({\n            startIndex: pe.startIndex,\n            endIndex: pe.endIndex,\n            content,\n          });\n        }\n      }\n    }\n\n    if (el.table?.tableRows) {\n      for (const row of el.table.tableRows || []) {\n        for (const cell of row.tableCells || []) {\n          scan(cell.content || []);\n        }\n      }\n    }\n\n    if (el.tableOfContents?.content) {\n      scan(el.tableOfContents.content || []);\n    }\n  }\n}\n\nscan(document.body?.content || []);\n\nconst allTokens = [];\nfor (const t of textElements) {\n  const regex = /<<[^>]+>>/g;\n  let m;\n  while ((m = regex.exec(t.content)) !== null) {\n    allTokens.push({\n      text: m[0],\n      startIndex: t.startIndex + m.index,\n      endIndex: t.startIndex + m.index + m[0].length,\n    });\n  }\n}\n\nconst imageMap = {};\nfor (const item of imagePlaceholders) {\n  if (item?.placeholder) {\n    imageMap[item.placeholder] = item.publicImageUrl || (item.fileId ? `https://lh3.googleusercontent.com/d/${item.fileId}` : '');\n  }\n}\n\nconst placeholderGroups = {\n  building_shelter: ['<<Bangunlink1>>', '<<Bangunlink2>>', '<<Bangunlink3>>', '<<Bangunlink4>>', '<<Bangunlink5>>'],\n  building_pagar: ['<<Bangunpagar1>>', '<<Bangunpagar2>>', '<<Bangunpagar3>>', '<<Bangunpagar4>>', '<<Bangunpagar5>>'],\n  building_pondasi: ['<<Pondasi1>>', '<<Pondasi2>>', '<<Pondasi3>>', '<<Pondasi4>>', '<<Pondasi5>>'],\n  building_pos: ['<<Pos1>>', '<<Pos2>>', '<<Pos3>>', '<<Pos4>>', '<<Pos5>>'],\n  tx: ['<<TX1>>', '<<TX2>>', '<<TX3>>', '<<TX4>>', '<<TX5>>'],\n  head: ['<<Head1>>', '<<Head2>>', '<<Head3>>', '<<Head4>>', '<<Head5>>'],\n  tv: ['<<TV1>>', '<<TV2>>', '<<TV3>>', '<<TV4>>', '<<TV5>>'],\n  sf: ['<<SF1>>', '<<SF2>>', '<<SF3>>', '<<SF4>>', '<<SF5>>'],\n  feed: ['<<Feed1>>', '<<Feed2>>', '<<Feed3>>', '<<Feed4>>', '<<Feed5>>'],\n  tower: ['<<Ltower1>>', '<<Ltower2>>', '<<Ltower3>>', '<<Ltower4>>', '<<Ltower5>>'],\n  mcb: ['<<MCB1>>', '<<MCB2>>', '<<MCB3>>', '<<MCB4>>', '<<MCB5>>'],\n  pu: ['<<PU1>>', '<<PU2>>', '<<PU3>>', '<<PU4>>', '<<PU5>>'],\n  ups: ['<<UPS1>>', '<<UPS2>>', '<<UPS3>>', '<<UPS4>>', '<<UPS5>>'],\n  pla: ['<<PLA1>>', '<<PLA2>>', '<<PLA3>>', '<<PLA4>>', '<<PLA5>>'],\n  actx: ['<<ACTX1>>', '<<ACTX2>>', '<<ACTX3>>', '<<ACTX4>>', '<<ACTX5>>'],\n  genset: ['<<Genset1>>', '<<Genset2>>', '<<Genset3>>', '<<Genset4>>', '<<Genset5>>'],\n  lruang: ['<<Lruang1>>', '<<Lruang2>>', '<<Lruang3>>', '<<Lruang4>>', '<<Lruang5>>'],\n  lt: ['<<LT1>>', '<<LT2>>', '<<LT3>>', '<<LT4>>', '<<LT5>>'],\n  gr: ['<<GR1>>', '<<GR2>>', '<<GR3>>', '<<GR4>>', '<<GR5>>'],\n};\n\nconst tokenToGroup = {};\nfor (const [groupName, tokens] of Object.entries(placeholderGroups)) {\n  tokens.forEach((token, index) => {\n    tokenToGroup[token] = { groupName, index };\n  });\n}\n\nconst groupActiveCounts = {};\nfor (const [groupName, tokens] of Object.entries(placeholderGroups)) {\n  groupActiveCounts[groupName] = tokens.filter(token => !!imageMap[token]).length;\n}\n\nfunction getImageSize(tokenText) {\n  const meta = tokenToGroup[tokenText];\n  if (!meta) return { width: 84, height: 84 };\n\n  const activeCount = groupActiveCounts[meta.groupName] || 0;\n  if (activeCount <= 1) return { width: 112, height: 112 };\n  if (activeCount === 2) return { width: 102, height: 102 };\n  if (activeCount === 3) return { width: 92, height: 92 };\n  if (activeCount === 4) return { width: 82, height: 82 };\n  return { width: 72, height: 72 };\n}\n\nconst requests = [];\nconst inserted = [];\nconst removedOnly = [];\nconst groupedSummary = {};\n\nallTokens.sort((a, b) => b.startIndex - a.startIndex);\n\nfor (const token of allTokens) {\n  const imageUrl = imageMap[token.text];\n\n  requests.push({\n    deleteContentRange: {\n      range: {\n        startIndex: token.startIndex,\n        endIndex: token.endIndex,\n      },\n    },\n  });\n\n  if (imageUrl) {\n    const size = getImageSize(token.text);\n\n    requests.push({\n      insertInlineImage: {\n        location: { index: token.startIndex },\n        uri: imageUrl,\n        objectSize: {\n          width: { magnitude: size.width, unit: 'PT' },\n          height: { magnitude: size.height, unit: 'PT' },\n        },\n      },\n    });\n\n    inserted.push({\n      placeholder: token.text,\n      width: size.width,\n      height: size.height,\n      ratio: '1:1',\n      align: 'TEMPLATE_CONTROLLED',\n      group: tokenToGroup[token.text]?.groupName || 'other',\n      groupCount: tokenToGroup[token.text]?.groupName\n        ? groupActiveCounts[tokenToGroup[token.text].groupName]\n        : 0,\n    });\n\n    const groupName = tokenToGroup[token.text]?.groupName || 'other';\n    if (!groupedSummary[groupName]) groupedSummary[groupName] = [];\n    groupedSummary[groupName].push({\n      placeholder: token.text,\n      width: size.width,\n      height: size.height,\n      ratio: '1:1',\n      align: 'TEMPLATE_CONTROLLED',\n    });\n  } else {\n    removedOnly.push(token.text);\n  }\n}\n\nif (requests.length === 0) {\n  requests.push({\n    replaceAllText: {\n      containsText: {\n        text: '[[NO_TOKEN_MATCH]]',\n        matchCase: true,\n      },\n      replaceText: '',\n    },\n  });\n}\n\nreturn [{\n  json: {\n    documentId: base.documentId,\n    docUrl: base.docUrl,\n    reportName: base.reportName,\n    recipientEmail: base.recipientEmail,\n    requests,\n    insertedPlaceholders: inserted,\n    removedPlaceholders: removedOnly,\n    smartGrouping: groupedSummary,\n    totalTokensScanned: allTokens.length,\n  },\n}];"
       },
-      "id": "build-image-requests",
+      "id": "956a3ccf-2d2c-4ff5-bc1c-1527eedf465d",
       "name": "Build Image Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1056, 0]
+      "position": [
+        1056,
+        0
+      ]
     },
     {
       "parameters": {
@@ -117,16 +138,18 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleOAuth2Api",
         "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ requests: $node[\"Build Image Requests\"].json.requests }) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  requests: $node[\"Build Image Requests\"].json.requests\n}) }}",
         "options": {}
       },
-      "id": "insert-images-batch",
-      "name": "Insert Images Batch",
+      "id": "e8275174-4609-4bf0-b4cf-720d08d3fc71",
+      "name": "Insert Images",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1232, 0],
+      "position": [
+        1232,
+        0
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "google-oauth2-credentials",
@@ -136,43 +159,112 @@
     },
     {
       "parameters": {
-        "respondWith": "text",
-        "responseBody": "={{ JSON.stringify({\n  ok: true,\n  documentId: $node[\"Build Image Requests\"].json.documentId,\n  docUrl: $node[\"Build Image Requests\"].json.docUrl,\n  reportName: $node[\"Build Image Requests\"].json.reportName\n}) }}",
+        "respondWith": "json",
+        "responseBody": "={{ {\n  ok: true,\n  documentId: $node[\"Build Image Requests\"].json.documentId,\n  docUrl: $node[\"Build Image Requests\"].json.docUrl,\n  reportName: $node[\"Build Image Requests\"].json.reportName,\n  insertedPlaceholders: $node[\"Build Image Requests\"].json.insertedPlaceholders,\n  removedPlaceholders: $node[\"Build Image Requests\"].json.removedPlaceholders,\n  smartGrouping: $node[\"Build Image Requests\"].json.smartGrouping\n} }}",
         "options": {}
       },
-      "id": "respond-to-webhook",
+      "id": "7701ac65-e1f4-4143-ac16-f36cdefeaba3",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1424, 0]
+      "position": [
+        1424,
+        0
+      ]
     }
   ],
   "connections": {
-    "Webhook - Ingest Form Data": {
-      "main": [[{ "node": "Normalize Payload", "type": "main", "index": 0 }]]
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Normalize Payload": {
-      "main": [[{ "node": "Copy Template Doc", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Copy Template Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Copy Template Doc": {
-      "main": [[{ "node": "Build Text Requests", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Text Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Text Requests": {
-      "main": [[{ "node": "Replace Text Placeholders", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Replace Text Placeholders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Replace Text Placeholders": {
-      "main": [[{ "node": "Get Document Structure", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Document Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Document Structure": {
-      "main": [[{ "node": "Build Image Requests", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Image Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Image Requests": {
-      "main": [[{ "node": "Insert Images Batch", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Insert Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Insert Images Batch": {
-      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    "Insert Images": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
-  "settings": { "executionOrder": "v1" }
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
 }
