@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ==============================================================================
  * AUTO DELETE IMAGES MY DRIVE (HIGH PERFORMANCE - SERVER-SIDE SEARCH)
  * Menghapus semua file gambar di My Drive KECUALI folder tertentu & subfoldernya
