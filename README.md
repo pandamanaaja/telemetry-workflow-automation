@@ -1,4 +1,4 @@
-# ⚡ Enterprise Infrastructure Automation & Telemetry Data Pipeline
+﻿# ⚡ Enterprise Infrastructure Automation & Telemetry Data Pipeline
 
 [![Platform](https://img.shields.io/badge/Platform-n8n%20%7C%20Google%20Apps%20Script-FF6D5A?style=for-the-badge&logo=n8n)](https://n8n.io/)
 [![Google Workspace](https://img.shields.io/badge/Google%20Workspace-Sheets%20%7C%20Docs%20%7C%20Drive-4285F4?style=for-the-badge&logo=google)](https://workspace.google.com/)
@@ -93,14 +93,17 @@ telemetry-workflow-automation/
     │   ├── xlsx_multi_sheet_exporter.js        # Scheduled daily/weekly/monthly XLSX exporter
     │   └── baseline_pdf_generator.js           # Incremental pointer-based PDF report generator
     ├── 03-data-deduplication/
-    │   └── duplicate_processor.js              # Composite-key deduplication processor
+    │   ├── duplicate_processor.js              # Composite-key deduplication processor
+    │   └── master_response_dedup_checker.js    # Master response deduplication and normalization
     ├── 04-schedule-operations/
     │   └── technician_schedule_matrix.js       # Roster matrix normalizer & transpose generator
     ├── 05-gmail-automation/
     │   └── email_sorting_engine.js             # Automated multi-criteria email routing engine
-    └── 06-form-webhooks/
-        ├── cleaning_report_webhook.js          # Asynchronous form submission dispatcher & callback
-        └── telemetry_form_submit.js            # Image extractor and telemetry webhook dispatcher
+    ├── 06-form-webhooks/
+    │   ├── cleaning_report_webhook.js          # Asynchronous form submission dispatcher & callback
+    │   └── telemetry_form_submit.js            # Image extractor and telemetry webhook dispatcher
+    └── 07-drive-maintenance/
+        └── auto_delete_images_except.js        # High-performance server-side image cleanup with exclusion
 ```
 
 ---
