@@ -92,7 +92,8 @@ telemetry-workflow-automation/
     │   └── fast_backup_engine.js               # High-speed in-memory retention engine
     ├── 02-report-generators/
     │   ├── xlsx_multi_sheet_exporter.js        # Scheduled daily/weekly/monthly XLSX exporter
-    │   └── baseline_pdf_generator.js           # Incremental pointer-based PDF report generator
+    │   ├── baseline_pdf_generator.js           # Incremental pointer-based PDF report generator
+    │   └── pln_billing_report_builder.js       # Automated PLN billing executive report builder
     ├── 03-data-deduplication/
     │   ├── duplicate_processor.js              # Composite-key deduplication processor
     │   └── master_response_dedup_checker.js    # Master response deduplication and normalization
