@@ -1,4 +1,4 @@
-{
+﻿{
     "name":  "N8N Form PA ST Joglo - Gemini Flash Lite [ V4 Super Cepat \u0026 Presisi ]",
     "nodes":  [
                   {
@@ -91,8 +91,8 @@
                       "waitBetweenTries":  3000,
                       "credentials":  {
                                           "googleDriveOAuth2Api":  {
-                                                                       "id":  "bgPnvd2WKFGb7KBu",
-                                                                       "name":  "LOCAL SERVER spujoglo@gmail.com"
+                                                                       "id":  "google-oauth2-credentials",
+                                                                       "name":  "Google Drive OAuth2"
                                                                    }
                                       }
                   },
@@ -189,7 +189,7 @@
                                          "operation":  "append",
                                          "documentId":  {
                                                             "__rl":  true,
-                                                            "value":  "1GQhkOKULmthMdtm_zgI-RRWRbZ0_M1AvzYnlogwS01Q",
+                                                            "value":  "YOUR_TELEMETRY_SPREADSHEET_ID",
                                                             "mode":  "id"
                                                         },
                                          "sheetName":  {
@@ -448,7 +448,7 @@
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
                                                                         "id":  "zkuMD8KKkPG2INKV",
-                                                                        "name":  "LOCAL SERVER spujoglo@gmail.com"
+                                                                        "name":  "Google Drive OAuth2"
                                                                     }
                                       }
                   },
@@ -457,7 +457,7 @@
                                          "operation":  "append",
                                          "documentId":  {
                                                             "__rl":  true,
-                                                            "value":  "1GQhkOKULmthMdtm_zgI-RRWRbZ0_M1AvzYnlogwS01Q",
+                                                            "value":  "YOUR_TELEMETRY_SPREADSHEET_ID",
                                                             "mode":  "id"
                                                         },
                                          "sheetName":  {
@@ -716,7 +716,7 @@
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
                                                                         "id":  "zkuMD8KKkPG2INKV",
-                                                                        "name":  "LOCAL SERVER spujoglo@gmail.com"
+                                                                        "name":  "Google Drive OAuth2"
                                                                     }
                                       }
                   },
@@ -742,8 +742,8 @@
                       "name":  "Delete Permanent Final",
                       "credentials":  {
                                           "googleDriveOAuth2Api":  {
-                                                                       "id":  "bgPnvd2WKFGb7KBu",
-                                                                       "name":  "LOCAL SERVER spujoglo@gmail.com"
+                                                                       "id":  "google-oauth2-credentials",
+                                                                       "name":  "Google Drive OAuth2"
                                                                    }
                                       },
                       "continueOnFail":  true
