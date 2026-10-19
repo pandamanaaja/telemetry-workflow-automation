@@ -1,110 +1,121 @@
-/**
+﻿/**
  * =========================================================================
- * MULTI-CRITERIA GMAIL ROUTING & ARCHIVAL ENGINE
+ * MASTER ENGINE: AUTOMASI GMAIL ALL MAIL (LIBRARY & MASTER ACCOUNT VERSION)
+ * Script ID: YOUR_SCRIPT_ID
  * =========================================================================
- * Automatically scans incoming and outgoing threads against business rules,
- * assigns hierarchical labels, and archives processed threads to keep the
- * inbox at zero. Includes execution timeout protection and trigger lifecycle.
  */
 
-const GMAIL_ENGINE_CONFIG = {
-  MAX_EXEC_TIME_MS: 240000, // 4-minute execution guard
-  BATCH_SIZE: 50,
-  RULES: [
-    // Outgoing Dispatch & Reports
-    { enabled: true, senders: ["station-alpha@company.com"], isSent: true, labelName: "Reports/Station-Alpha", archive: true },
-    { enabled: true, senders: ["station-beta@company.com"], isSent: true, labelName: "Reports/Station-Beta", archive: true },
+var MAX_EXEC_TIME = 240000; // Batas aman 4 menit
+var BATCH_SIZE = 50;
+var USE_DATE_LIMIT_ON_TRIGGER = true; // Batasi pindaian rutin ke 30 hari terakhir agar hemat kuota
 
-    // Incoming Station Operational Alerts
-    { enabled: true, recipients: ["station-alpha@company.com"], isSent: false, labelName: "Operations/Station-Alpha", archive: true },
-    { enabled: true, recipients: ["station-beta@company.com"], isSent: false, labelName: "Operations/Station-Beta", archive: true },
+// ATURAN TERPUSAT (Logika Asli Anda Dipertahankan Sepenuhnya)
+var RULES = [
+  // A. OUTGOING / KELUAR
+  { enabled: true, keywords: [], senders: ["site_a@example.com"], recipients: [], isSent: true, labelName: "Laporan Terkirim Panjang", archive: true },
+  { enabled: true, keywords: [], senders: ["site_b@example.com"], recipients: [], isSent: true, labelName: "Laporan Terkirim Joglo", archive: true },
 
-    // HR, Leave, & Duty Officer Approvals
-    { enabled: true, keywords: ["DUTY OFFICER APPROVAL", "DO APPROVAL"], labelName: "HR/Duty-Officer-Approved", archive: true },
-    { enabled: true, keywords: ["Leave Request", "Permit", "Cuti"], labelName: "HR/Leave-Requests", archive: true },
-    { enabled: true, keywords: ["Attendance Confirmation", "Absensi"], labelName: "HR/Attendance", archive: true },
-    { enabled: true, keywords: ["Payroll", "Slip Gaji"], labelName: "Finance/Payroll", archive: true },
+  // B. INCOMING / MASUK
+  { enabled: true, keywords: [], senders: [], recipients: ["site_b@example.com"], isSent: false, labelName: "Site Joglo", archive: true },
+  { enabled: true, keywords: [], senders: [], recipients: ["site_a@example.com"], isSent: false, labelName: "Site Panjang", archive: true },
+  { enabled: true, keywords: ["PENGAJUAN DUTTY OFFICER"], senders: [], recipients: [], isSent: false, labelName: "DO ACC", archive: true },
+  { enabled: true, keywords: ["Pengganti Tugas Cuti", "Cuti", "Pengajuan Cuti"], senders: [], recipients: [], isSent: false, labelName: "Pengganti Tugas Cuti", archive: true },
+  { enabled: true, keywords: [], senders: ["drive-shares-dm-noreply@google.com", "drive-shares-noreply@google.com", "no-reply@accounts.google.com", "noreply-apps-scripts-notifications@google.com"], recipients: [], isSent: false, labelName: "Google Drive Notif", archive: true },
+  { enabled: true, keywords: [], senders: ["broadcast@example.com", "it_ops@example.com", "it_ops2@example.com", "helpdesk@example.com"], recipients: [], isSent: false, labelName: "IT Alert", archive: true },
+  { enabled: true, keywords: ["Konfirmasi Absensi Anda", "konfirmasi absensi", "Izin Absen", "Keterangan Absen", "medical", "Pengajuan Medical Reimbursement"], senders: [], recipients: [], isSent: false, labelName: "Konfirmasi Absen", archive: true },
+  { enabled: true, keywords: [], senders: ["all_staff@example.com"], recipients: [], isSent: false, labelName: "Kegiatan Internal", archive: true },
+  { enabled: true, keywords: [], senders: ["hrd@example.com","hub@example.com","benefit_admin@example.com"], recipients: [], isSent: false, labelName: "Info HRD", archive: true },
+  { enabled: true, keywords: ["samsung"], senders: [], recipients: [], isSent: false, labelName: "Samsung", archive: true },
+  { enabled: true, keywords: ["PEMBAYARAN DUTTY OFFICER"], senders: [], recipients: [], isSent: false, labelName: "PEMBAYARAN DUTTY OFFICER", archive: true },
+  { enabled: true, keywords: ["Payroll Slip Salary"], senders: [], recipients: [], isSent: false, labelName: "Payroll Slip Salary", archive: true },
+  { enabled: true, keywords: [], senders: ["internal_coop@example.com"], recipients: [], isSent: false, labelName: "Koperasi", archive: true },
+  { enabled: true, keywords: ["duka cita", "duka"], senders: [], recipients: [], isSent: false, labelName: "Duka Cita", archive: true }
+];
 
-    // Infrastructure & Automated Systems
-    { enabled: true, senders: ["drive-shares-noreply@google.com", "no-reply@accounts.google.com"], labelName: "System/Drive-Notifications", archive: true },
-    { enabled: true, senders: ["it-alerts@company.com", "helpdesk@company.com"], labelName: "IT/Alerts", archive: true }
-  ]
-};
-
-/**
- * Activates recurring trigger (Every 5 minutes)
- */
-function activateGmailEngineTrigger() {
-  deactivateGmailEngineTrigger();
+// =========================================================================
+// 1. MANAJEMEN TRIGGER MASTER
+// =========================================================================
+function AKTIFKAN_OTOMATISASI_MASTER() {
+  HENTIKAN_OTOMATISASI_MASTER();
+  
   ScriptApp.newTrigger('sortEmailsMultiCriteria')
     .timeBased()
     .everyMinutes(5)
     .create();
-  Logger.log("Automated 5-minute Gmail sorting engine activated.");
+    
+  Logger.log("âœ… Otomatisasi AKUN MASTER berhasil diaktifkan rutin 5 menit!");
   sortEmailsMultiCriteria();
 }
 
-/**
- * Removes existing triggers
- */
-function deactivateGmailEngineTrigger() {
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let t of triggers) {
-    if (t.getHandlerFunction() === 'sortEmailsMultiCriteria') {
-      ScriptApp.deleteTrigger(t);
+function HENTIKAN_OTOMATISASI_MASTER() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'sortEmailsMultiCriteria') {
+      ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  Logger.log("Gmail sorting triggers removed.");
+  Logger.log("ðŸ›‘ Trigger untuk akun Master dihentikan.");
 }
 
-/**
- * Main worker function
- */
+// =========================================================================
+// 2. CORE ENGINE (HIGH PERFORMANCE & HEMAT KUOTA API)
+// =========================================================================
 function sortEmailsMultiCriteria() {
-  const startTime = Date.now();
-  const rules = GMAIL_ENGINE_CONFIG.RULES;
-  const managedLabels = rules.map(r => r.labelName.toLowerCase());
+  executeEmailSorting(USE_DATE_LIMIT_ON_TRIGGER);
+}
 
-  for (let rule of rules) {
-    if (!rule.enabled) continue;
+// Fungsi manual untuk memproses seluruh riwayat email lama tanpa batas 30 hari
+function prosesSemuaRiwayatEmailLama() {
+  executeEmailSorting(false);
+}
 
-    // Execution time safety guard to prevent script timeouts
-    if (Date.now() - startTime > GMAIL_ENGINE_CONFIG.MAX_EXEC_TIME_MS) {
-      Logger.log("Execution time limit reached. Deferring remainder to next cycle.");
+function executeEmailSorting(useDateLimit) {
+  var startTime = Date.now();
+  var labelCache = initLabelCache();
+
+  for (var i = 0; i < RULES.length; i++) {
+    if (Date.now() - startTime > MAX_EXEC_TIME) {
+      Logger.log("â³ Waktu eksekusi mencapai batas aman 4 menit. Dilanjutkan pada pindaian berikutnya.");
       break;
     }
 
-    const query = buildSearchQuery(rule, rules);
-    const threads = GmailApp.search(query, 0, GMAIL_ENGINE_CONFIG.BATCH_SIZE);
+    var rule = RULES[i];
+    if (rule.enabled === false) continue;
+
+    var query = buildQuery(rule, RULES, useDateLimit);
+    var threads = GmailApp.search(query, 0, BATCH_SIZE);
 
     if (threads.length > 0) {
-      const label = getOrCreateLabel(rule.labelName);
-      const threadsToProcess = [];
+      var label = getOrCreateLabel(rule.labelName, labelCache);
 
-      for (let thread of threads) {
-        const existingLabels = thread.getLabels();
-        const alreadyLabeled = existingLabels.some(l => managedLabels.includes(l.getName().toLowerCase()));
+      // Hasil query sudah dieksklusi -label:, langsung proses dalam 1 batch tanpa looping per thread
+      label.addToThreads(threads);
 
-        if (!alreadyLabeled) {
-          threadsToProcess.push(thread);
-        }
+      if (rule.archive) {
+        GmailApp.moveThreadsToArchive(threads);
       }
-
-      if (threadsToProcess.length > 0) {
-        label.addToThreads(threadsToProcess);
-        if (rule.archive) {
-          GmailApp.moveThreadsToArchive(threadsToProcess);
-        }
-        Logger.log(`[${rule.labelName}] Processed ${threadsToProcess.length} threads.`);
-      }
+      
+      Logger.log("âœ“ [" + rule.labelName + "] Berhasil memproses " + threads.length + " email.");
     }
   }
 }
 
-function buildSearchQuery(rule, allRules) {
-  const excludeLabels = allRules.map(r => `-label:"${r.labelName}"`).join(" ");
-  const queryParts = [excludeLabels];
+// =========================================================================
+// HELPER: BUILD QUERY (DENGAN LOGIKA ASLI ANDA)
+// =========================================================================
+function buildQuery(rule, allRules, useDateLimit) {
+  var queryParts = [];
 
+  // 1. Batasan waktu untuk pindaian rutin
+  if (useDateLimit) {
+    queryParts.push('newer_than:30d');
+  }
+
+  // 2. Kecualikan label agar thread yang sudah diproses tidak diambil lagi
+  var excludeLabels = allRules.map(function(r) { return '-label:"' + r.labelName + '"'; }).join(" ");
+  queryParts.push(excludeLabels);
+
+  // 3. Logika Asli Anda (Dipertahankan Persis)
   if (rule.senders && rule.senders.length > 0) {
     queryParts.push('from:(' + rule.senders.join(' OR ') + ')');
   } else if (rule.isSent) {
@@ -117,18 +128,55 @@ function buildSearchQuery(rule, allRules) {
     queryParts.push('to:(' + rule.recipients.join(' OR ') + ')');
   }
 
+  // 4. Kata Kunci Subjek
   if (rule.keywords && rule.keywords.length > 0) {
-    const formattedKw = rule.keywords.map(k => `"${k}"`).join(' OR ');
+    var formattedKw = rule.keywords.map(function(k) { return '"' + k + '"'; }).join(' OR ');
     queryParts.push('subject:(' + formattedKw + ')');
   }
 
   return queryParts.join(" ");
 }
 
-function getOrCreateLabel(labelName) {
-  let label = GmailApp.getUserLabelByName(labelName);
+// =========================================================================
+// HELPER: CACHE LABEL (Mencegah Pemanggilan API Berulang Kali)
+// =========================================================================
+function initLabelCache() {
+  var cache = {};
+  var userLabels = GmailApp.getUserLabels();
+  for (var i = 0; i < userLabels.length; i++) {
+    cache[userLabels[i].getName().toLowerCase()] = userLabels[i];
+  }
+  return cache;
+}
+
+function getOrCreateLabel(labelName, cache) {
+  var lowerName = labelName.toLowerCase();
+  if (cache[lowerName]) {
+    return cache[lowerName];
+  }
+  var label = GmailApp.getUserLabelByName(labelName);
   if (!label) {
     label = GmailApp.createLabel(labelName);
   }
+  cache[lowerName] = label;
   return label;
+}
+
+// =========================================================================
+// HELPER: PEMBERSIHAN LABEL LENGKAP SAMPAI HABIS
+// =========================================================================
+function resetAndCleanLabels() {
+  var totalCleaned = 0;
+  for (var i = 0; i < RULES.length; i++) {
+    var label = GmailApp.getUserLabelByName(RULES[i].labelName);
+    if (label) {
+      var threads = label.getThreads(0, 100);
+      while (threads.length > 0) {
+        label.removeFromThreads(threads);
+        totalCleaned += threads.length;
+        threads = label.getThreads(0, 100); // Lanjutkan batch berikutnya sampai benar-benar bersih
+      }
+    }
+  }
+  Logger.log("âœ… Pembersihan selesai. Total " + totalCleaned + " email dibersihkan dari label.");
 }
