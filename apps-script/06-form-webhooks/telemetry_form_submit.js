@@ -1,4 +1,4 @@
-const N8N_WEBHOOK_URL = 'https://ai-transdivops.biz.id/webhook/eea82b7a-94c6-4d4e-89e5-167e47966f88';
+﻿const N8N_WEBHOOK_URL = 'https://your-n8n-instance.example.com/webhook/YOUR_WEBHOOK_UUID';
 
 const FORM_TITLE = 'N8N Form PA ST Joglo';
 const QUESTION_JAM_LAPORAN = 'Jam Laporan';
