@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =========================================================================
  * MASTER ENGINE: AUTOMASI GMAIL ALL MAIL (LIBRARY & MASTER ACCOUNT VERSION)
  * Script ID: YOUR_SCRIPT_ID
