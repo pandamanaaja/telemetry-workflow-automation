@@ -83,7 +83,8 @@ telemetry-workflow-automation/
 ├── n8n-workflows/
 │   ├── 01-industrial-telemetry-ocr.json        # Telemetry OCR & metric parsing workflow
 │   ├── 02-site-visit-report-autocrat.json      # Dynamic Docs-to-PDF report generator
-│   └── 03-cleaning-report-generator.json       # Maintenance report & callback synchronizer
+│   ├── 03-cleaning-report-generator.json       # Maintenance report & callback synchronizer
+│   └── 04-pln-bill-ocr-extractor.json          # Multimodal PLN billing OCR & auto-recap workflow
 │
 └── apps-script/
     ├── 01-master-metering/
@@ -101,7 +102,8 @@ telemetry-workflow-automation/
     │   └── email_sorting_engine.js             # Automated multi-criteria email routing engine
     ├── 06-form-webhooks/
     │   ├── cleaning_report_webhook.js          # Asynchronous form submission dispatcher & callback
-    │   └── telemetry_form_submit.js            # Image extractor and telemetry webhook dispatcher
+    │   ├── telemetry_form_submit.js            # Image extractor and telemetry webhook dispatcher
+    │   └── pln_form_submit.js                  # PLN bill upload dispatcher to n8n webhook
     └── 07-drive-maintenance/
         └── auto_delete_images_except.js        # High-performance server-side image cleanup with exclusion
 ```
