@@ -1,5 +1,5 @@
-{
-  "name": "Cleaning Report Generator & Sheet Synchronizer",
+﻿{
+  "name": "Cleaning Report [Outh Method] - Sequential Flow",
   "nodes": [
     {
       "parameters": {
@@ -7,21 +7,28 @@
         "path": "cleaning-report-webhook",
         "options": {}
       },
-      "id": "webhook-cleaning-trigger",
-      "name": "Webhook - Ingest Cleaning Visit",
+      "id": "bf6eac38-834a-4e3a-b68b-93efb6405545",
+      "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [416, -144]
+      "position": [
+        416,
+        -144
+      ],
+      "webhookId": "YOUR_WEBHOOK_UUID"
     },
     {
       "parameters": {
-        "jsCode": "const payload = $json.body || $json || {};\nconst row = payload.data || {};\n\nfunction hasValue(v) {\n  return v !== undefined && v !== null && String(v).trim() !== '';\n}\n\nfunction getField(name) {\n  const keys = Object.keys(row);\n  if (Object.prototype.hasOwnProperty.call(row, name) && hasValue(row[name])) {\n    return row[name];\n  }\n  const matched = keys.filter(k => String(k).trim().toLowerCase() === String(name).trim().toLowerCase());\n  for (const k of matched) {\n    if (hasValue(row[k])) return row[k];\n  }\n  return '';\n}\n\nfunction getFileId(url) {\n  if (!url) return '';\n  const match = String(url).match(/[-\\w]{25,}/);\n  return match ? match[0] : '';\n}\n\nconst lokasi = getField('Site') || getField('Lokasi Site') || 'SITE';\nconst kegiatan = getField('Kegiatan') || 'Rutin Cleaning';\nconst teknisi = getField('Nama Teknisi') || 'Teknisi Field';\n\nconst reportName = `Laporan Cleaning ${lokasi} ${Date.now()}`;\n\nreturn [{\n  json: {\n    config: {\n      templateDocId: 'YOUR_CLEANING_TEMPLATE_DOC_ID',\n      outputDocFolderId: 'YOUR_CLEANING_OUTPUT_FOLDER_ID'\n    },\n    reportName,\n    textPlaceholders: {\n      '<<Lokasi>>': lokasi,\n      '<<Kegiatan>>': kegiatan,\n      '<<Teknisi>>': teknisi\n    },\n    matchTimestamp: getField('Timestamp') || new Date().toISOString(),\n    executionLockId: payload.executionLockId || ''\n  }\n}];"
+        "jsCode": "let payload = $json.body || $json || {};\nif (typeof payload === 'string') {\n  try { payload = JSON.parse(payload); } catch (e) {}\n}\nconst row = payload.data || {};\n\nfunction hasValue(v) {\n  return v !== undefined && v !== null && String(v).trim() !== '';\n}\n\nfunction getField(name) {\n  const keys = Object.keys(row);\n  if (Object.prototype.hasOwnProperty.call(row, name) && hasValue(row[name])) {\n    return row[name];\n  }\n  const matchedKeys = keys.filter(k => String(k).trim() === String(name).trim());\n  for (const k of matchedKeys) {\n    if (hasValue(row[k])) return row[k];\n  }\n  if (Object.prototype.hasOwnProperty.call(row, name)) return row[name];\n  if (matchedKeys.length) return row[matchedKeys[0]];\n  return '';\n}\n\nfunction getFileId(url) {\n  if (!url) return '';\n  const match = String(url).match(/[-\\w]{25,}/);\n  return match ? match[0] : '';\n}\n\nfunction safeText(value) {\n  return String(value || '')\n    .trim()\n    .replace(/[\\\\/:*?\"<>|]/g, '')\n    .replace(/\\s+/g, ' ');\n}\n\nfunction formatTanggal(value) {\n  if (!value) return '';\n  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {\n    const dd = String(value.getDate()).padStart(2, '0');\n    const mm = String(value.getMonth() + 1).padStart(2, '0');\n    const yyyy = value.getFullYear();\n    return `${dd}-${mm}-${yyyy}`;\n  }\n  const str = String(value).trim();\n  const mdyTime = str.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?$/);\n  if (mdyTime) {\n    const mm = String(mdyTime[1]).padStart(2, '0');\n    const dd = String(mdyTime[2]).padStart(2, '0');\n    const yyyy = mdyTime[3];\n    return `${dd}-${mm}-${yyyy}`;\n  }\n  const dmyTime = str.match(/^(\\d{1,2})-(\\d{1,2})-(\\d{4})(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?$/);\n  if (dmyTime) {\n    const dd = String(dmyTime[1]).padStart(2, '0');\n    const mm = String(dmyTime[2]).padStart(2, '0');\n    const yyyy = dmyTime[3];\n    return `${dd}-${mm}-${yyyy}`;\n  }\n  const dateOnly = str.split(' ')[0];\n  return dateOnly.replace(/\\//g, '-').replace(/\\s+/g, ' ');\n}\n\nfunction formatJamNowJakarta() {\n  const parts = new Intl.DateTimeFormat('en-GB', {\n    timeZone: 'Asia/Jakarta',\n    hour: '2-digit',\n    minute: '2-digit',\n    second: '2-digit',\n    hour12: false,\n  }).formatToParts(new Date());\n  const hh = parts.find(p => p.type === 'hour')?.value || '00';\n  const mm = parts.find(p => p.type === 'minute')?.value || '00';\n  const ss = parts.find(p => p.type === 'second')?.value || '00';\n  return `${hh}.${mm}.${ss}`;\n}\n\nconst lokasi = getField('Site') || getField('Lokasi Site');\nconst kegiatan = getField('Kegiatan');\nconst tanggalRaw =\n  getField('Tanggal Kunjungan Cleaning') ||\n  getField('Tanggal Kunjungan') ||\n  getField('Tanggal Kunjungan ');\nconst tanggalKunjunganCleaning = formatTanggal(tanggalRaw);\nconst teknisi = getField('Nama Teknisi');\nconst keterangan = getField('Keterangan Kunjungan') || getField('Keterangan');\nconst deskripsi = getField('Deskripsi Pekerjaan');\n\nlet matchTimestamp =\n  getField('Timestamp') ||\n  getField('timestamp') ||\n  getField('Waktu') ||\n  getField('Created At') ||\n  getField('Tanggal Submit') ||\n  '';\n\nif (!matchTimestamp) {\n  matchTimestamp = new Date().toISOString();\n}\n\nconst textPlaceholders = {\n  '<<Lokasi>>': String(lokasi || ''),\n  '<<Tanggal Kunjungan Cleaning>>': String(tanggalKunjunganCleaning || ''),\n  '<<Teknisi>>': String(teknisi || ''),\n  '<<Kegiatan>>': String(kegiatan || ''),\n  '<<Keterangan>>': String(keterangan || ''),\n  '<<Deskripsi>>': String(deskripsi || ''),\n};\n\n// PRINSIP PENGISIAN MENGALIR: Semua foto mengisi slot berurutan dari <<B1>> s/d <<A5>>\nconst before = [\n  getFileId(getField('BFlink1')),\n  getFileId(getField('BFlink2')),\n  getFileId(getField('BFlink3')),\n  getFileId(getField('BFlink4')),\n  getFileId(getField('BFlink5')),\n].filter(Boolean);\n\nconst saat = [\n  getFileId(getField('Slink1')),\n  getFileId(getField('Slink2')),\n  getFileId(getField('Slink3')),\n  getFileId(getField('Slink4')),\n  getFileId(getField('Slink5')),\n].filter(Boolean);\n\nconst after = [\n  getFileId(getField('Alink1')),\n  getFileId(getField('Alink2')),\n  getFileId(getField('Alink3')),\n  getFileId(getField('Alink4')),\n  getFileId(getField('Alink5')),\n].filter(Boolean);\n\nconst mergedImages = [...before, ...saat, ...after];\n\nconst orderedPlaceholders = [\n  '<<B1>>', '<<B2>>', '<<B3>>',\n  '<<B4>>', '<<B5>>', '<<S1>>',\n  '<<S2>>', '<<S3>>', '<<S4>>',\n  '<<S5>>', '<<A1>>', '<<A2>>',\n  '<<A3>>', '<<A4>>', '<<A5>>'\n];\n\nconst imagePlaceholders = orderedPlaceholders.map((placeholder, index) => {\n  const fileId = mergedImages[index] || '';\n  return {\n    placeholder,\n    fileId,\n    publicImageUrl: fileId\n      ? `https://lh3.googleusercontent.com/d/${fileId}`\n      : '',\n  };\n});\n\nconst reportName = safeText(\n  `Laporan Cleaning ${lokasi} ${tanggalKunjunganCleaning} ${formatJamNowJakarta()}`\n);\n\nreturn [{\n  json: {\n    config: {\n      templateDocId: 'YOUR_TEMPLATE_DOC_ID',\n      outputDocFolderId: 'YOUR_OUTPUT_DOC_FOLDER_ID'\n    },\n    reportName,\n    textPlaceholders,\n    imagePlaceholders,\n    matchTimestamp,\n    lokasi,\n    kegiatan,\n    tanggalKunjunganCleaning,\n    teknisi,\n    keterangan,\n    deskripsi,\n    rowNumber: payload.rowNumber || '',\n    executionLockId: payload.executionLockId || '',\n    originalRow: row\n  }\n}];"
       },
-      "id": "prepare-cleaning-data",
+      "id": "233c0154-0ac4-455a-861b-0012b0a9e786",
       "name": "Prepare Incoming Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [672, -144]
+      "position": [
+        672,
+        -144
+      ]
     },
     {
       "parameters": {
@@ -31,14 +38,17 @@
         "nodeCredentialType": "googleOAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { name: $json.reportName, parents: [$json.config.outputDocFolderId] } }}",
+        "jsonBody": "={{ JSON.stringify({ name: $json.reportName, parents: [$json.config.outputDocFolderId] }) }}",
         "options": {}
       },
-      "id": "copy-doc-template",
+      "id": "98f1e614-7825-4bbc-bcd5-776b2cb4d39a",
       "name": "Copy Template Doc",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [928, -144],
+      "position": [
+        928,
+        -144
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "google-oauth2-credentials",
@@ -48,7 +58,107 @@
     },
     {
       "parameters": {
-        "url": "=https://www.googleapis.com/drive/v3/files/{{$json.id}}/export?mimeType=application/pdf",
+        "jsCode": "const base = $items('Prepare Incoming Data', 0, 0)[0].json;\nconst textPlaceholders = base.textPlaceholders || {};\nconst imagePlaceholders = base.imagePlaceholders || [];\nconst requests = [];\n\nfor (const [placeholder, value] of Object.entries(textPlaceholders)) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: placeholder, matchCase: true },\n      replaceText: value == null ? '' : String(value),\n    },\n  });\n}\n\nif (requests.length === 0) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: '[[NOOP_EMPTY]]', matchCase: true },\n      replaceText: '',\n    },\n  });\n}\n\nreturn [{\n  json: {\n    documentId: $json.id,\n    docUrl: `https://docs.google.com/document/d/${$json.id}/edit`,\n    reportName: base.reportName,\n    imagePlaceholders,\n    matchTimestamp: base.matchTimestamp,\n    requests,\n  }\n}];"
+      },
+      "id": "4b37a1a1-d325-4d5b-b13e-b308e05c7d1b",
+      "name": "Build Text Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{$json.documentId}}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.requests }) }}",
+        "options": {}
+      },
+      "id": "e71e2b2e-1bb0-4bf7-af61-0ac580a04ee1",
+      "name": "Replace Text Placeholders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        416,
+        48
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://docs.googleapis.com/v1/documents/{{$items('Build Text Requests', 0, 0)[0].json.documentId}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {}
+      },
+      "id": "1d7cb186-1f4b-4dcf-99d7-28f3ff221be2",
+      "name": "Get Document Structure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        48
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const document = $json;\nconst base = $items('Build Text Requests', 0, 0)[0].json;\nconst imagePlaceholders = Array.isArray(base.imagePlaceholders) ? base.imagePlaceholders : [];\nconst textElements = [];\n\nfunction scan(elements = []) {\n  for (const el of elements) {\n    if (el.paragraph?.elements) {\n      for (const pe of el.paragraph.elements) {\n        const content = pe.textRun?.content || '';\n        if (content) {\n          textElements.push({\n            startIndex: pe.startIndex,\n            endIndex: pe.endIndex,\n            content,\n          });\n        }\n      }\n    }\n    if (el.table?.tableRows) {\n      for (const row of el.table.tableRows || []) {\n        for (const cell of row.tableCells || []) {\n          scan(cell.content || []);\n        }\n      }\n    }\n    if (el.tableOfContents?.content) {\n      scan(el.tableOfContents.content || []);\n    }\n  }\n}\n\nscan(document.body?.content || []);\n\nconst allTokens = [];\nfor (const t of textElements) {\n  const regex = /<<[^>]+>>/g;\n  let m;\n  while ((m = regex.exec(t.content)) !== null) {\n    allTokens.push({\n      text: m[0],\n      startIndex: t.startIndex + m.index,\n      endIndex: t.startIndex + m.index + m[0].length,\n    });\n  }\n}\n\nconst imageMap = {};\nfor (const item of imagePlaceholders) {\n  if (item?.placeholder) {\n    imageMap[item.placeholder] = item.publicImageUrl || '';\n  }\n}\n\nconst requests = [];\nallTokens.sort((a, b) => b.startIndex - a.startIndex);\n\nfor (const token of allTokens) {\n  const imageUrl = imageMap[token.text] || '';\n\n  requests.push({\n    deleteContentRange: {\n      range: {\n        startIndex: token.startIndex,\n        endIndex: token.endIndex,\n      },\n    },\n  });\n\n  if (imageUrl) {\n    requests.push({\n      insertInlineImage: {\n        location: { index: token.startIndex },\n        uri: imageUrl,\n        objectSize: {\n          width: { magnitude: 150, unit: 'PT' },\n          height: { magnitude: 150, unit: 'PT' },\n        },\n      },\n    });\n  }\n}\n\nif (requests.length === 0) {\n  requests.push({\n    replaceAllText: {\n      containsText: { text: '[[NOOP_EMPTY_IMG]]', matchCase: true },\n      replaceText: '',\n    },\n  });\n}\n\nreturn [{\n  json: {\n    documentId: base.documentId,\n    docUrl: base.docUrl,\n    reportName: base.reportName,\n    matchTimestamp: base.matchTimestamp,\n    requests,\n  }\n}];"
+      },
+      "id": "208979ae-cdb0-40f1-ac00-25e08d24e006",
+      "name": "Build Image Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{$json.documentId}}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.requests }) }}",
+        "options": {}
+      },
+      "id": "9dacb131-6c1b-4206-b02e-e3e2824730fe",
+      "name": "Insert Images",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1184,
+        48
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://www.googleapis.com/drive/v3/files/{{$json.documentId}}/export?mimeType=application/pdf",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleOAuth2Api",
         "options": {
@@ -59,11 +169,14 @@
           }
         }
       },
-      "id": "export-pdf-binary",
+      "id": "884ff255-e458-4ec4-a082-13cd188a7a56",
       "name": "Export PDF",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [416, 100],
+      "position": [
+        416,
+        256
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "google-oauth2-credentials",
@@ -73,53 +186,263 @@
     },
     {
       "parameters": {
+        "name": "={{$node[\"Build Image Requests\"].json.reportName + '.pdf'}}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_OUTPUT_DOC_FOLDER_ID",
+          "mode": "list",
+          "cachedResultName": "Output PDF",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/YOUR_OUTPUT_DOC_FOLDER_ID"
+        },
+        "options": {}
+      },
+      "id": "a3f0b80d-2f85-453e-b2b6-b2a73e1131ed",
+      "name": "Upload PDF to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        656,
+        256
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{\"https://www.googleapis.com/drive/v3/files/\" + $node[\"Build Image Requests\"].json.documentId + \"?supportsAllDrives=true\"}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ trashed: true }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        928,
+        256
+      ],
+      "id": "6904ca0f-7736-4bea-a40f-a0ad9138667a",
+      "name": "Trash Temp Doc",
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const reportName = $node[\"Build Image Requests\"].json.reportName;\nconst matchTimestamp = $node[\"Build Image Requests\"].json.matchTimestamp;\nconst now = new Date().toISOString();\nconst executionLockId = $node[\"Prepare Incoming Data\"].json.executionLockId || '';\n\n// Ambil file PDF yang valid dari node Upload PDF to Drive\nconst uploadPdfNode = $node[\"Upload PDF to Drive\"].json;\n\nlet pdfUrl = '';\nif (uploadPdfNode.webViewLink) {\n  pdfUrl = uploadPdfNode.webViewLink;\n} else if (uploadPdfNode.id) {\n  pdfUrl = `https://drive.google.com/file/d/${uploadPdfNode.id}/view`;\n}\n\nreturn [{\n  json: {\n    Timestamp: matchTimestamp,\n    'Status Laporan': 'DONE',\n    'Nama File Laporan': reportName + '.pdf',\n    'Link Doc': '',\n    'Link PDF': pdfUrl,\n    'Execution Lock ID': executionLockId,\n    'Waktu Proses': now\n  }\n}];"
+      },
+      "id": "1fb5a76c-b215-4070-9708-8711df7dcfee",
+      "name": "Prepare Sheet Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        256
+      ]
+    },
+    {
+      "parameters": {
         "operation": "update",
         "documentId": {
           "__rl": true,
-          "value": "YOUR_CLEANING_MASTER_SPREADSHEET_ID",
-          "mode": "id"
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Master Cleaning SIte Visit",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
         },
         "sheetName": {
           "__rl": true,
-          "value": "Form Responses 1",
-          "mode": "name"
+          "value": 747923074,
+          "mode": "list",
+          "cachedResultName": "Form Responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=747923074"
         },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Status Laporan": "DONE",
-            "Execution Lock ID": "={{$json.executionLockId}}"
+            "Timestamp": "={{$json['Timestamp']}}",
+            "Status Laporan": "={{$json['Status Laporan']}}",
+            "Nama File Laporan": "={{$json['Nama File Laporan']}}",
+            "Link Doc": "={{$json['Link Doc']}}",
+            "Link PDF": "={{$json['Link PDF']}}",
+            "Waktu Proses": "={{$json['Waktu Proses']}}",
+            "Execution Lock ID": "={{$json['Execution Lock ID']}}"
           },
-          "matchingColumns": ["Execution Lock ID"]
-        }
+          "matchingColumns": [
+            "Timestamp"
+          ]
+        },
+        "options": {}
       },
-      "id": "update-sheet-status",
+      "id": "265f2424-14f8-44ff-b404-fc9b7a0e430c",
       "name": "Update Sheet Status",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [700, 100],
+      "position": [
+        1424,
+        256
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "google-sheets-oauth2",
-          "name": "Google Sheets Account"
+          "id": "google-oauth2-credentials",
+          "name": "Google Workspace OAuth2"
         }
       }
     }
   ],
   "connections": {
-    "Webhook - Ingest Cleaning Visit": {
-      "main": [[{ "node": "Prepare Incoming Data", "type": "main", "index": 0 }]]
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Incoming Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Incoming Data": {
-      "main": [[{ "node": "Copy Template Doc", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Copy Template Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Copy Template Doc": {
-      "main": [[{ "node": "Export PDF", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Text Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Text Requests": {
+      "main": [
+        [
+          {
+            "node": "Replace Text Placeholders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Text Placeholders": {
+      "main": [
+        [
+          {
+            "node": "Get Document Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document Structure": {
+      "main": [
+        [
+          {
+            "node": "Build Image Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Image Requests": {
+      "main": [
+        [
+          {
+            "node": "Insert Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Images": {
+      "main": [
+        [
+          {
+            "node": "Export PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Export PDF": {
-      "main": [[{ "node": "Update Sheet Status", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Upload PDF to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF to Drive": {
+      "main": [
+        [
+          {
+            "node": "Trash Temp Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trash Temp Doc": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Sheet Update": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
-  "settings": { "executionOrder": "v1" }
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
 }
