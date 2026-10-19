@@ -16,7 +16,8 @@ describe('n8n Workflow Structure & Integrity Validation', () => {
       const filePath = path.join(workflowsDir, fileName);
       assert.ok(fs.existsSync(filePath), `File exists: ${fileName}`);
 
-      const raw = fs.readFileSync(filePath, 'utf8');
+      // Strip UTF-8 BOM if present and parse JSON
+      const raw = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
       let parsed;
       assert.doesNotThrow(() => {
         parsed = JSON.parse(raw);
