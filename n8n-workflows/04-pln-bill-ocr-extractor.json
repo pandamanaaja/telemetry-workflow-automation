@@ -1,0 +1,303 @@
+{
+    "active":  false,
+    "name":  "04 - PLN Electricity Bill OCR \u0026 Sheet Synchronizer",
+    "connections":  {
+                        "Parse \u0026 Standardize PLN Record":  {
+                                                                    "main":  [
+                                                                                 {
+                                                                                     "node":  "Append to Google Sheet",
+                                                                                     "type":  "main",
+                                                                                     "index":  0
+                                                                                 }
+                                                                             ]
+                                                                },
+                        "Drive Trigger - Dropzone Folder":  {
+                                                                "main":  [
+                                                                             {
+                                                                                 "node":  "Normalize Ingestion Source",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                            },
+                        "Webhook - Form Submit":  {
+                                                      "main":  [
+                                                                   {
+                                                                       "node":  "Normalize Ingestion Source",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                  },
+                        "Append to Google Sheet":  {
+                                                       "main":  [
+                                                                    {
+                                                                        "node":  "Rename \u0026 Move to Archive Folder",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                   },
+                        "Prepare Multimodal Gemini Payload":  {
+                                                                  "main":  [
+                                                                               {
+                                                                                   "node":  "Gemini OCR Extraction API",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                              },
+                        "Rename \u0026 Move to Archive Folder":  {
+                                                                     "main":  [
+                                                                                  {
+                                                                                      "node":  "Respond to Webhook",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                 },
+                        "Download File from Drive":  {
+                                                         "main":  [
+                                                                      {
+                                                                          "node":  "Prepare Multimodal Gemini Payload",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                     },
+                        "Gemini OCR Extraction API":  {
+                                                          "main":  [
+                                                                       {
+                                                                           "node":  "Parse \u0026 Standardize PLN Record",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                      },
+                        "Normalize Ingestion Source":  {
+                                                           "main":  [
+                                                                        {
+                                                                            "node":  "Download File from Drive",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                       }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "nodes":  [
+                  {
+                      "id":  "webhook-form-submit",
+                      "name":  "Webhook - Form Submit",
+                      "parameters":  {
+                                         "path":  "pln-bill-webhook",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     },
+                                         "httpMethod":  "POST"
+                                     },
+                      "type":  "n8n-nodes-base.webhook",
+                      "position":  [
+                                       -400,
+                                       -100
+                                   ],
+                      "typeVersion":  2
+                  },
+                  {
+                      "id":  "drive-dropzone-trigger",
+                      "name":  "Drive Trigger - Dropzone Folder",
+                      "parameters":  {
+                                         "triggerOn":  "fileCreated",
+                                         "pollTimes":  {
+                                                           "item":  [
+                                                                        {
+                                                                            "mode":  "everyMinute"
+                                                                        }
+                                                                    ]
+                                                       },
+                                         "folderId":  "YOUR_DROPZONE_FOLDER_ID"
+                                     },
+                      "credentials":  {
+                                          "googleDriveOAuth2Api":  {
+                                                                       "id":  "google-oauth2-credentials",
+                                                                       "name":  "Google Workspace OAuth2"
+                                                                   }
+                                      },
+                      "type":  "n8n-nodes-base.googleDriveTrigger",
+                      "position":  [
+                                       -400,
+                                       150
+                                   ],
+                      "typeVersion":  1
+                  },
+                  {
+                      "id":  "normalize-input",
+                      "name":  "Normalize Ingestion Source",
+                      "parameters":  {
+                                         "jsCode":  "const item = $json;\nlet fileId = \u0027\u0027;\nlet fileName = \u0027\u0027;\nlet mimeType = \u0027application/pdf\u0027;\nlet channel = \u0027Drive Dropzone\u0027;\nlet respondentEmail = \u0027\u0027;\nlet submitTimestamp = new Date().toISOString();\n\nif (item.body) {\n  // From Webhook (Google Form submit)\n  channel = \u0027Google Form\u0027;\n  const body = item.body;\n  fileId = body.drive_file_id || body.file_id || \u0027\u0027;\n  fileName = body.file_name || \u0027Tagihan_PLN.pdf\u0027;\n  mimeType = body.mime_type || \u0027application/pdf\u0027;\n  respondentEmail = body.respondent_email || \u0027\u0027;\n  submitTimestamp = body.submitted_at || submitTimestamp;\n} else if (item.id) {\n  // From Google Drive Trigger\n  channel = \u0027Drive Dropzone\u0027;\n  fileId = item.id;\n  fileName = item.name || \u0027Tagihan_PLN.pdf\u0027;\n  mimeType = item.mimeType || \u0027application/pdf\u0027;\n}\n\nif (!fileId) {\n  throw new Error(\u0027File ID tidak terdeteksi dari input.\u0027);\n}\n\nreturn {\n  json: {\n    channel,\n    file_id: fileId,\n    file_name: fileName,\n    mime_type: mimeType,\n    respondent_email: respondentEmail,\n    submitted_at: submitTimestamp\n  }\n};",
+                                         "mode":  "runOnceForEachItem"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "position":  [
+                                       -160,
+                                       20
+                                   ],
+                      "typeVersion":  2
+                  },
+                  {
+                      "id":  "download-drive-file",
+                      "name":  "Download File from Drive",
+                      "parameters":  {
+                                         "authentication":  "predefinedCredentialType",
+                                         "method":  "GET",
+                                         "options":  {
+
+                                                     },
+                                         "responseFormat":  "file",
+                                         "url":  "=https://www.googleapis.com/drive/v3/files/{{ $json.file_id }}?alt=media\u0026supportsAllDrives=true",
+                                         "nodeCredentialType":  "googleOAuth2Api"
+                                     },
+                      "credentials":  {
+                                          "googleOAuth2Api":  {
+                                                                  "id":  "google-oauth2-credentials",
+                                                                  "name":  "Google Workspace OAuth2"
+                                                              }
+                                      },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "position":  [
+                                       80,
+                                       20
+                                   ],
+                      "typeVersion":  4.2
+                  },
+                  {
+                      "id":  "prepare-gemini-payload",
+                      "name":  "Prepare Multimodal Gemini Payload",
+                      "parameters":  {
+                                         "jsCode":  "const meta = $(\u0027Normalize Ingestion Source\u0027).item.json;\nlet base64Data = \u0027\u0027;\nlet detectedMime = meta.mime_type || \u0027application/pdf\u0027;\n\ntry {\n  const binaryObj = $input.item.binary || $binary || {};\n  const binKey = Object.keys(binaryObj)[0] || \u0027data\u0027;\n  \n  if (this.helpers \u0026\u0026 typeof this.helpers.getBinaryDataBuffer === \u0027function\u0027) {\n    const buffer = await this.helpers.getBinaryDataBuffer(0, binKey);\n    if (buffer \u0026\u0026 buffer.length \u003e 0) {\n      base64Data = buffer.toString(\u0027base64\u0027);\n    }\n  }\n  \n  if (!base64Data \u0026\u0026 binaryObj[binKey]?.data) {\n    base64Data = binaryObj[binKey].data;\n  }\n  if (binaryObj[binKey]?.mimeType) {\n    detectedMime = binaryObj[binKey].mimeType;\n  }\n} catch (err) {\n  const binaryObj = $input.item.binary || $binary || {};\n  const binKey = Object.keys(binaryObj)[0] || \u0027data\u0027;\n  if (binaryObj[binKey]?.data) {\n    base64Data = binaryObj[binKey].data;\n  }\n}\n\nif (!base64Data) {\n  throw new Error(\u0027Data biner dokumen tidak ditemukan: \u0027 + meta.file_name);\n}\n\n// Prompt khusus struk \u0026 rekening listrik PLN Indonesia\nconst prompt = `Anda adalah sistem AI OCR presisi tinggi untuk menganalisis dokumen tagihan/struk/rekening listrik PLN (Perusahaan Listrik Negara) Indonesia.\nDokumen yang dilampirkan dapat berupa file PDF digital, scan dokumen, tangkapan layar aplikasi PLN Mobile / Mobile Banking, atau foto struk kasir/ATM.\n\nTugas: Ekstrak seluruh informasi tagihan PLN berikut dengan akurat ke dalam format JSON murni.\n\nKunci JSON yang wajib dihasilkan (hanya gunakan key berikut):\n{\n  \"idpel\": \"12 digit ID Pelanggan (contoh: 547100234567, tanpa spasi/strip)\",\n  \"no_meter\": \"nomor kwh meter fisik jika tertera, jika tidak ada isi kosong\",\n  \"nama_pelanggan\": \"nama pelanggan atau institusi yang tertera di rekening\",\n  \"tarif_daya\": \"golongan tarif dan kapasitas daya (contoh: B3/33000 VA, I3/105000 VA, R1/2200 VA)\",\n  \"periode_tagihan\": \"bulan dan tahun pemakaian listrik (contoh: Oktober 2026, September 2026)\",\n  \"stand_meter_awal\": \"angka meteran awal (angka murni)\",\n  \"stand_meter_akhir\": \"angka meteran akhir (angka murni)\",\n  \"pemakaian_kwh\": \"total kWh pemakaian bulanan (angka murni desimal/bulat)\",\n  \"rupiah_tagihan\": \"nilai rupiah tagihan murni PLN sebelum admin (angka murni bulat)\",\n  \"biaya_admin\": \"biaya admin bank/ppob/loket (angka murni, jika 0 tulis 0)\",\n  \"total_bayar\": \"total keseluruhan rupiah yang dibayarkan kasir/bank (angka murni bulat)\",\n  \"tanggal_bayar\": \"tanggal dan jam bayar jika ada bukti bayar (format: YYYY-MM-DD HH:mm:ss, jika hanya tanggal tulis YYYY-MM-DD)\",\n  \"no_referensi\": \"nomor referensi / nomor transaksi / no struk unik\",\n  \"status_lunas\": \"LUNAS jika sudah terbayar, atau TAGIHAN jika belum bayar\",\n  \"metode_bayar\": \"nama bank / loket / PLN Mobile / ATM / Indomaret / Alfamart / jika tertera\"\n}\n\nAturan Ketat:\n1. Nilai numerik (rupiah_tagihan, biaya_admin, total_bayar, pemakaian_kwh) HANYA berupa angka tanpa simbol mata uang (Rp), tanpa titik ribuan, dan tanpa koma. Contoh: \"3450000\", bukan \"Rp 3.450.000\".\n2. IDPEL harus murni angka (biasanya 12 digit).\n3. Jika ada nilai yang tidak ditemukan pada dokumen, isi dengan string kosong \"\".\n4. Kembalikan HANYA format JSON valid tanpa format markdown, tanpa kutipan backtick, dan tanpa teks pengantar.`;\n\nreturn {\n  json: {\n    meta,\n    gemini_body: {\n      contents: [\n        {\n          role: \"user\",\n          parts: [\n            { text: prompt },\n            {\n              inline_data: {\n                mime_type: detectedMime,\n                data: base64Data\n              }\n            }\n          ]\n        }\n      ],\n      generationConfig: {\n        responseMimeType: \"application/json\",\n        temperature: 0.1\n      }\n    }\n  }\n};",
+                                         "mode":  "runOnceForEachItem"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "position":  [
+                                       320,
+                                       20
+                                   ],
+                      "typeVersion":  2
+                  },
+                  {
+                      "parameters":  {
+                                         "body":  "={{ JSON.stringify(.gemini_body) }}",
+                                         "sendBody":  true,
+                                         "rawContentType":  "application/json",
+                                         "method":  "POST",
+                                         "options":  {
+                                                         "timeout":  45000
+                                                     },
+                                         "contentType":  "raw",
+                                         "url":  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=YOUR_GEMINI_API_KEY"
+                                     },
+                      "id":  "gemini-ocr-request",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "retryOnFail":  true,
+                      "name":  "Gemini OCR Extraction API",
+                      "waitBetweenTries":  3000,
+                      "maxTries":  3,
+                      "position":  [
+                                       560,
+                                       20
+                                   ],
+                      "typeVersion":  4.2
+                  },
+                  {
+                      "id":  "parse-pln-data",
+                      "name":  "Parse \u0026 Standardize PLN Record",
+                      "parameters":  {
+                                         "jsCode":  "const meta = $(\u0027Prepare Multimodal Gemini Payload\u0027).item.json.meta;\nconst apiResponse = $json || {};\n\nlet parsed = {};\ntry {\n  const candidateText = apiResponse.candidates?.[0]?.content?.parts?.[0]?.text;\n  if (candidateText) {\n    const cleanJson = candidateText.replace(/```json/gi, \u0027\u0027).replace(/```/g, \u0027\u0027).trim();\n    parsed = JSON.parse(cleanJson);\n  }\n} catch (err) {\n  parsed = { error: \u0027Gagal parse JSON: \u0027 + err.message };\n}\n\nfunction cleanDigits(val) {\n  if (!val) return \u0027\u0027;\n  return String(val).replace(/[^0-9]/g, \u0027\u0027);\n}\n\nfunction cleanFloat(val) {\n  if (!val) return \u0027\u0027;\n  return String(val).replace(/,/g, \u0027.\u0027).replace(/[^0-9.]/g, \u0027\u0027);\n}\n\nconst idpel = cleanDigits(parsed.idpel);\nconst totalBayar = cleanDigits(parsed.total_bayar) || cleanDigits(parsed.rupiah_tagihan);\nconst rupiahTagihan = cleanDigits(parsed.rupiah_tagihan) || totalBayar;\nconst biayaAdmin = cleanDigits(parsed.biaya_admin) || \u00270\u0027;\nconst pemakaianKwh = cleanFloat(parsed.pemakaian_kwh);\nconst periode = parsed.periode_tagihan || \u0027\u0027;\nconst namaPelanggan = parsed.nama_pelanggan || \u0027\u0027;\nconst tarifDaya = parsed.tarif_daya || \u0027\u0027;\n\n// Timestamp Jakarta\nconst now = new Date();\nconst formattedNow = new Intl.DateTimeFormat(\u0027en-GB\u0027, {\n  timeZone: \u0027Asia/Jakarta\u0027,\n  year: \u0027numeric\u0027, month: \u00272-digit\u0027, day: \u00272-digit\u0027,\n  hour: \u00272-digit\u0027, minute: \u00272-digit\u0027, second: \u00272-digit\u0027,\n  hour12: false\n}).format(now).replace(\u0027,\u0027, \u0027\u0027);\n\nconst driveUrl = `https://drive.google.com/file/d/${meta.file_id}/view`;\nconst safeFileName = `PLN_${periode ? periode.replace(/\\s+/g, \u0027-\u0027) : \u0027Tagihan\u0027}_${idpel || \u0027NOID\u0027}_${namaPelanggan ? namaPelanggan.replace(/[\\/\\\\:*?\"\u003c\u003e|]/g, \u0027\u0027).trim() : \u0027Site\u0027}.pdf`;\n\nreturn {\n  json: {\n    record_for_sheet: [\n      formattedNow,\n      meta.channel,\n      idpel,\n      parsed.no_meter || \u0027\u0027,\n      namaPelanggan,\n      tarifDaya,\n      periode,\n      cleanFloat(parsed.stand_meter_awal),\n      cleanFloat(parsed.stand_meter_akhir),\n      pemakaianKwh,\n      rupiahTagihan,\n      biayaAdmin,\n      totalBayar,\n      parsed.status_lunas || \u0027LUNAS\u0027,\n      parsed.tanggal_bayar || \u0027\u0027,\n      parsed.no_referensi || \u0027\u0027,\n      parsed.metode_bayar || \u0027\u0027,\n      driveUrl\n    ],\n    file_id: meta.file_id,\n    new_file_name: safeFileName,\n    summary: {\n      idpel,\n      namaPelanggan,\n      periode,\n      totalBayar,\n      pemakaianKwh\n    }\n  }\n};",
+                                         "mode":  "runOnceForEachItem"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "position":  [
+                                       800,
+                                       20
+                                   ],
+                      "typeVersion":  2
+                  },
+                  {
+                      "id":  "append-to-sheet",
+                      "name":  "Append to Google Sheet",
+                      "parameters":  {
+                                         "url":  "https://sheets.googleapis.com/v4/spreadsheets/YOUR_PLN_SPREADSHEET_ID/values/Tagihan%20PLN!A:R:append?valueInputOption=USER_ENTERED",
+                                         "method":  "POST",
+                                         "authentication":  "predefinedCredentialType",
+                                         "jsonBody":  "={{ { values: [ .record_for_sheet ] } }}",
+                                         "nodeCredentialType":  "googleOAuth2Api",
+                                         "specifyBody":  "json",
+                                         "options":  {
+
+                                                     },
+                                         "sendBody":  true
+                                     },
+                      "credentials":  {
+                                          "googleOAuth2Api":  {
+                                                                  "id":  "google-oauth2-credentials",
+                                                                  "name":  "Google Workspace OAuth2"
+                                                              }
+                                      },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "position":  [
+                                       1040,
+                                       20
+                                   ],
+                      "typeVersion":  4.2
+                  },
+                  {
+                      "id":  "rename-archive-drive-file",
+                      "name":  "Rename \u0026 Move to Archive Folder",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "credentials":  {
+                                          "googleOAuth2Api":  {
+                                                                  "id":  "google-oauth2-credentials",
+                                                                  "name":  "Google Workspace OAuth2"
+                                                              }
+                                      },
+                      "typeVersion":  4.2,
+                      "continueOnFail":  true,
+                      "parameters":  {
+                                         "url":  "=https://www.googleapis.com/drive/v3/files/{{ $(\"Parse \u0026 Standardize PLN Record\").item.json.file_id }}?addParents=YOUR_ARCHIVE_FOLDER_ID\u0026removeParents=YOUR_DROPZONE_FOLDER_ID\u0026supportsAllDrives=true",
+                                         "method":  "PATCH",
+                                         "authentication":  "predefinedCredentialType",
+                                         "jsonBody":  "={{ { name: $(\"Parse \u0026 Standardize PLN Record\").item.json.new_file_name } }}",
+                                         "nodeCredentialType":  "googleOAuth2Api",
+                                         "specifyBody":  "json",
+                                         "options":  {
+
+                                                     },
+                                         "sendBody":  true
+                                     },
+                      "position":  [
+                                       1280,
+                                       20
+                                   ]
+                  },
+                  {
+                      "id":  "respond-webhook",
+                      "name":  "Respond to Webhook",
+                      "parameters":  {
+                                         "responseBody":  "={{ {\n  success: true,\n  message: \"Tagihan PLN berhasil diekstrak dan dicatat ke Google Sheets\",\n  data: $(\"Parse \u0026 Standardize PLN Record\").item.json.summary\n} }}",
+                                         "respondWith":  "json",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "position":  [
+                                       1520,
+                                       20
+                                   ],
+                      "typeVersion":  1.1
+                  }
+              ]
+}
