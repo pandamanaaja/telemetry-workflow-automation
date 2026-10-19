@@ -1,4 +1,4 @@
-﻿# ⚡ Enterprise Infrastructure Automation & Telemetry Data Pipeline
+# ⚡ Enterprise Infrastructure Automation & Telemetry Data Pipeline
 
 [![Platform](https://img.shields.io/badge/Platform-n8n%20%7C%20Google%20Apps%20Script-FF6D5A?style=for-the-badge&logo=n8n)](https://n8n.io/)
 [![Google Workspace](https://img.shields.io/badge/Google%20Workspace-Sheets%20%7C%20Docs%20%7C%20Drive-4285F4?style=for-the-badge&logo=google)](https://workspace.google.com/)
