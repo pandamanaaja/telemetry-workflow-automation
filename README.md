@@ -102,6 +102,7 @@ telemetry-workflow-automation/
     ├── 05-gmail-automation/
     │   └── email_sorting_engine.js             # Automated multi-criteria email routing engine
     ├── 06-form-webhooks/
+    │   ├── site_visit_report_dispatcher.js     # Site visit inspection dispatcher with Docs API & PDF export
     │   ├── cleaning_report_webhook.js          # Asynchronous form submission dispatcher & callback
     │   ├── telemetry_form_submit.js            # Image extractor and telemetry webhook dispatcher
     │   └── pln_form_submit.js                  # PLN bill upload dispatcher to n8n webhook
