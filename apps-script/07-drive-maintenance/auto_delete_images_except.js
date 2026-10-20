@@ -1,31 +1,41 @@
 /**
  * ==============================================================================
- * AUTO DELETE IMAGES MY DRIVE (HIGH PERFORMANCE - SERVER-SIDE SEARCH)
- * Menghapus semua file gambar di My Drive KECUALI folder tertentu & subfoldernya
+ * AUTO DELETE IMAGES MY DRIVE (WITH FOLDER EXCLUSION GUARD)
+ * ==============================================================================
+ * Provides high-performance server-side querying and recursive folder tree
+ * traversal to safely purge uploaded image blobs from Google Drive while
+ * protecting vital site archive folders and their descendant subfolders.
  * ==============================================================================
  */
 
+const CLEANER_CONFIG = {
+  // Masukkan ID folder yang DIKECUALIKAN dari penghapusan
+  EXCLUDED_FOLDER_IDS: [
+    'YOUR_EXCLUDED_FOLDER_ID'
+  ],
+  MAX_EXECUTION_TIME_MS: 5 * 60 * 1000 // Pengaman 5 menit (batas kuota GAS 6 menit)
+};
+
+/**
+ * METODE 1: QUERY CEPAT SERVER-SIDE (Disarankan)
+ * Memindai file gambar milik sendiri yang aktif tanpa memindai folder satu per satu.
+ */
 function autoDeleteImagesMyDriveExcept() {
   const startTime = new Date().getTime();
-  const MAX_EXECUTION_TIME_MS = 5 * 60 * 1000; // Pengaman: Berhenti otomatis di menit ke-5 agar tidak timeout
-
-  // ID Folder yang INGIN DIKECUALIKAN (beserta seluruh subfoldernya)
-  const EXCLUDED_FOLDER_ID = 'YOUR_EXCLUDED_FOLDER_ID';
-
-  // 1. PENGAMAN KEAMANAN: Pastikan folder pengecualian benar-benar ada
   const excludedFolderIds = new Set();
+
   try {
-    const excludedFolder = DriveApp.getFolderById(EXCLUDED_FOLDER_ID);
-    Logger.log(`Memetakan folder pengecualian: "${excludedFolder.getName()}"...`);
-    collectAllSubfolderIds(excludedFolder, excludedFolderIds);
-    Logger.log(`Total folder & subfolder yang dilindungi: ${excludedFolderIds.size} folder.`);
+    CLEANER_CONFIG.EXCLUDED_FOLDER_IDS.forEach(id => {
+      const folder = DriveApp.getFolderById(id);
+      Logger.log(`Memetakan folder pengecualian: "${folder.getName()}"...`);
+      collectAllSubfolderIds_(folder, excludedFolderIds);
+    });
+    Logger.log(`Total folder & subfolder terlindungi: ${excludedFolderIds.size}`);
   } catch (err) {
-    Logger.log(`ERROR KRITIS: Folder pengecualian ID '${EXCLUDED_FOLDER_ID}' tidak ditemukan! Operasi dibatalkan demi keamanan: ${err.message}`);
+    Logger.log(`ERROR: Folder pengecualian tidak ditemukan. Operasi dibatalkan demi keamanan: ${err.message}`);
     return;
   }
 
-  // 2. QUERY CEPAT SERVER-SIDE (Hanya mencari gambar milik sendiri yang belum di tong sampah)
-  // Tidak perlu memindai file PDF, Docs, Sheets, Video, dll.
   const query = "mimeType contains 'image/' and trashed = false and 'me' in owners";
   const imageFiles = DriveApp.searchFiles(query);
 
@@ -35,12 +45,10 @@ function autoDeleteImagesMyDriveExcept() {
 
   Logger.log("Mulai memproses file gambar...");
 
-  // 3. PROSES FILE GAMBAR
   while (imageFiles.hasNext()) {
-    // Cek batas waktu 5 menit agar script berhenti dengan aman
-    if (new Date().getTime() - startTime > MAX_EXECUTION_TIME_MS) {
+    if (new Date().getTime() - startTime > CLEANER_CONFIG.MAX_EXECUTION_TIME_MS) {
       isTimedOut = true;
-      Logger.log("Peringatan: Batas waktu 5 menit tercapai. Script berhenti dengan aman untuk menghindari error timeout.");
+      Logger.log("Peringatan: Batas waktu 5 menit tercapai. Berhenti dengan aman.");
       break;
     }
 
@@ -59,33 +67,79 @@ function autoDeleteImagesMyDriveExcept() {
     if (isProtected) {
       protectedCount++;
     } else {
-      file.setTrashed(true); // Pindahkan ke Sampah (Aman & bisa di-restore)
+      file.setTrashed(true);
       deletedCount++;
     }
   }
 
-  // 4. LAPORAN HASIL EKSEKUSI
   const durationSec = Math.round((new Date().getTime() - startTime) / 1000);
   Logger.log("================ HASIL PEMBERSIHAN ================");
   Logger.log(`Waktu Eksekusi   : ${durationSec} detik`);
   Logger.log(`Gambar Dihapus   : ${deletedCount} file`);
-  Logger.log(`Gambar Dilindungi: ${protectedCount} file (di folder pengecualian)`);
-  if (isTimedOut) {
-    Logger.log("Status           : BELUM SELESAI SEMUA. Silakan jalankan script sekali lagi untuk melanjutkan sisa file.");
-  } else {
-    Logger.log("Status           : SELESAI SEMPURNA (Semua gambar di luar folder pengecualian telah dibersihkan).");
-  }
+  Logger.log(`Gambar Dilindungi: ${protectedCount} file`);
+  Logger.log(`Status           : ${isTimedOut ? 'BELUM SELESAI (Jalankan ulang)' : 'SELESAI LENGKAP'}`);
   Logger.log("===================================================");
 }
 
-
 /**
- * Helper: Mengumpulkan ID folder utama dan seluruh anak subfoldernya ke dalam Set
+ * METODE 2: TELUSUR REKURSIF (Folder Tree Traversal)
+ * Menelusuri hirarki folder dari root My Drive secara bertahap.
  */
-function collectAllSubfolderIds(folder, idSet) {
+function autoDeleteImagesRecursive() {
+  const rootFolder = DriveApp.getRootFolder();
+  const state = {
+    count: 0,
+    excludedFolderIds: CLEANER_CONFIG.EXCLUDED_FOLDER_IDS,
+    startTime: new Date().getTime(),
+    maxExecutionTimeMs: CLEANER_CONFIG.MAX_EXECUTION_TIME_MS
+  };
+
+  Logger.log("Mulai penelusuran rekursif My Drive...");
+  processFolderSafe_(rootFolder, state);
+  Logger.log(`Selesai. Total gambar dipindahkan ke Sampah: ${state.count}`);
+}
+
+function processFolderSafe_(folder, state) {
+  if (new Date().getTime() - state.startTime > state.maxExecutionTimeMs) {
+    Logger.log("Batas waktu 5 menit tercapai. Jalankan kembali script untuk melanjutkan.");
+    return;
+  }
+
+  if (state.excludedFolderIds.includes(folder.getId())) {
+    Logger.log(`[DILEWATI] Folder pengecualian: "${folder.getName()}" (ID: ${folder.getId()})`);
+    return;
+  }
+
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    if (new Date().getTime() - state.startTime > state.maxExecutionTimeMs) return;
+
+    const file = files.next();
+    try {
+      if (file.getMimeType().startsWith('image/')) {
+        file.setTrashed(true);
+        state.count++;
+
+        if (state.count % 50 === 0) {
+          Logger.log(`Progress: ${state.count} gambar telah dipindahkan ke sampah...`);
+        }
+      }
+    } catch (e) {
+      Logger.log(`Gagal memproses file "${file.getName()}": ${e.message}`);
+    }
+  }
+
+  const subfolders = folder.getFolders();
+  while (subfolders.hasNext()) {
+    if (new Date().getTime() - state.startTime > state.maxExecutionTimeMs) return;
+    processFolderSafe_(subfolders.next(), state);
+  }
+}
+
+function collectAllSubfolderIds_(folder, idSet) {
   idSet.add(folder.getId());
   const subfolders = folder.getFolders();
   while (subfolders.hasNext()) {
-    collectAllSubfolderIds(subfolders.next(), idSet);
+    collectAllSubfolderIds_(subfolders.next(), idSet);
   }
 }
