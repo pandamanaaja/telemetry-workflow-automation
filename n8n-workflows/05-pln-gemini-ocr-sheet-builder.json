@@ -1,0 +1,569 @@
+{
+  "name": "05 - PLN Multi-Customer Gemini OCR & Auto Report Sheet Builder (v14.3)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pln-gemini-ocr-upload",
+        "options": {}
+      },
+      "id": "a33711d9-58d6-4ceb-9669-e409b7a59fbe",
+      "name": "Receive Google Forms Files",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2096,
+        3344
+      ],
+      "webhookId": "pln-gemini-ocr-upload"
+    },
+    {
+      "parameters": {
+        "jsCode": "// v14.3: validate technician at ingress and carry it through the PDF loop.\nconst incoming = $input.first().json;\nconst data = incoming.body ?? incoming;\nconst normalize = v => Array.isArray(v) ? String(v[0] ?? '').trim() : String(v ?? '').trim();\nconst fields = data.namedValues ?? data.named_values ?? data.form_response ?? data;\nconst tech = normalize(data.technician || data.nama_teknisi || data['Nama Teknisi'] || data['Nama teknisi'] || data['Technician'] || fields.technician || fields.nama_teknisi || fields['Nama Teknisi'] || fields['Nama teknisi'] || fields['Technician']);\nif (!tech) throw new Error('TECHNICIAN_MISSING_AT_WEBHOOK: Google Form sender must include Nama Teknisi in webhook JSON. No fallback technician is allowed.');\nlet files = data.file_ids ?? data.files ?? [];\nif (typeof files === 'string') files = files.split(',').map(s=>s.trim()).filter(Boolean);\nif (!Array.isArray(files) || files.length===0) throw new Error('FILE_IDS_MISSING: Google Form webhook must send file_ids array');\nif (files.length>30) throw new Error('MAX_30_PDFS');\nconst seen=new Set(), out=[];\nfor(const f of files){\n  const id=normalize(typeof f==='object' ? (f.id ?? f.file_id) : f);\n  if(!/^[A-Za-z0-9_-]{10,}$/.test(id)) throw new Error('INVALID_PDF_FILE_ID: '+id);\n  if(seen.has(id)) continue;\n  seen.add(id);\n  out.push({\n    json:{\n      file_id:id,\n      file_name:typeof f==='object'?normalize(f.name):'',\n      submission_id:data.submission_id??'',\n      technician:tech,\n      enable_pdf:false\n    }\n  });\n}\nreturn out;"
+      },
+      "id": "d3752af1-f452-42de-860f-3450efbea9fe",
+      "name": "Split PDF IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1808,
+        3344
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e55b6101-c7a6-4947-9f78-1de3875620e1",
+      "name": "Process PDFs Sequentially",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1520,
+        3344
+      ],
+      "notesInFlow": true,
+      "notes": "Batch size 1; setiap PDF diproses sampai selesai sebelum PDF berikutnya."
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.file_id }}"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "e3a4d72c-4715-470e-b3b9-b91600981b08",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1280,
+        3360
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "document",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash-lite",
+          "mode": "id"
+        },
+        "text": "You extract exactly 11 fields from an Indonesian PLN electricity billing PDF. Read table columns carefully, including Stand Awal and Stand Akhir for LWBP, WBP, kVArh. Return ONLY a single valid JSON object (no markdown), keys exactly: id_pelanggan (string), nama_pelanggan (string), jatuh_tempo_bulan (Indonesian month string), jatuh_tempo_tahun (integer), total_harus_dibayar (integer rupiah), stand_akhir_lwbp (decimal string), stand_akhir_wbp (decimal string), stand_awal_lwbp (decimal string), stand_awal_wbp (decimal string), stand_akhir_kvarh (decimal string), stand_awal_kvarh (decimal string). Use null if unreadable or absent, but an explicitly printed zero is \"0\". Only take month and year from Jatuh Tempo, not billing month. Remove thousands separators in meter readings, preserve precision and trailing decimal zeros. Example: 173,446.440 => \"173446.440\". Do not infer, calculate, or manufacture readings. The field total_harus_dibayar must be from Total Yang Harus Dibayarkan, not any subtotal.",
+        "inputType": "binary",
+        "options": {
+          "maxOutputTokens": 1800
+        }
+      },
+      "id": "898b731c-88f7-43e7-b8ac-2d7267e9b862",
+      "name": "Gemini Extract PLN",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1120,
+        3360
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GEMINI_API_CREDENTIAL_ID",
+          "name": "Google Gemini API Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Parse Gemini Analyze Document output in several n8n response shapes.\n// Keep invalid/ambiguous OCR OUT of the permanent Google Sheets database.\nconst source = $input.item.json || {};\nconst keys = [\n  'id_pelanggan', 'nama_pelanggan', 'jatuh_tempo_bulan',\n  'jatuh_tempo_tahun', 'total_harus_dibayar',\n  'stand_akhir_lwbp', 'stand_akhir_wbp',\n  'stand_awal_lwbp', 'stand_awal_wbp',\n  'stand_akhir_kvarh', 'stand_awal_kvarh'\n];\nconst targetKeys = new Set(keys);\nconst candidates = [];\nconst examined = new WeakSet();\nconst issues = [];\nconst priority = [\n  'text', 'output', 'response', 'result', 'content', 'parts',\n  'data', 'candidates', 'message', 'generations', 'choices', 'json'\n];\n\nfunction parseEmbeddedJson(text) {\n  if (typeof text !== 'string') return null;\n  let clean = text.trim();\n  if (clean.startsWith('```')) {\n    clean = clean.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/, '').trim();\n  }\n  try { return JSON.parse(clean); } catch (e) { /* allow surrounding text */ }\n  const start = clean.indexOf('{');\n  if (start < 0) return null;\n  let depth = 0, quoted = false, slash = false;\n  for (let i = start; i < clean.length; i++) {\n    const ch = clean[i];\n    if (quoted) {\n      if (slash) slash = false;\n      else if (ch === '\\\\') slash = true;\n      else if (ch === '\"') quoted = false;\n      continue;\n    }\n    if (ch === '\"') quoted = true;\n    else if (ch === '{') depth++;\n    else if (ch === '}' && --depth === 0) {\n      try { return JSON.parse(clean.slice(start, i + 1)); }\n      catch (e) { return null; }\n    }\n  }\n  return null;\n}\n\nfunction explore(node, path, depth) {\n  if (depth > 10 || node === null || node === undefined) return;\n  if (typeof node === 'string') {\n    const parsed = parseEmbeddedJson(node);\n    if (parsed !== null) explore(parsed, path + ' [JSON text]', depth + 1);\n    return;\n  }\n  if (typeof node !== 'object') return;\n  if (examined.has(node)) return;\n  examined.add(node);\n  if (Array.isArray(node)) {\n    for (let i = 0; i < Math.min(node.length, 20); i++) explore(node[i], `${path}[${i}]`, depth + 1);\n    return;\n  }\n  const matches = keys.filter(k => Object.prototype.hasOwnProperty.call(node, k));\n  if (matches.length) candidates.push({ data: node, path, matched: matches.length });\n  for (const key of priority) {\n    if (Object.prototype.hasOwnProperty.call(node, key)) explore(node[key], `${path}.${key}`, depth + 1);\n  }\n  for (const [key, value] of Object.entries(node)) {\n    if (!priority.includes(key) && !targetKeys.has(key) && typeof value === 'object') {\n      explore(value, `${path}.${key}`, depth + 1);\n    }\n  }\n}\n\nexplore(source, '$json', 0);\ncandidates.sort((a, b) => b.matched - a.matched);\nconst best = candidates[0] || null;\nconst extracted = best ? best.data : {};\nconst rec = {};\nfor (const k of keys) rec[k] = Object.prototype.hasOwnProperty.call(extracted, k) ? extracted[k] : null;\n\nif (!best) issues.push('Gemini response did not contain recognizable OCR JSON fields');\nfor (const k of keys) {\n  if (rec[k] === null || rec[k] === undefined || rec[k] === '') issues.push('Missing ' + k);\n}\n\nif (rec.id_pelanggan !== null) rec.id_pelanggan = String(rec.id_pelanggan).replace(/\\s+/g, '');\nif (rec.nama_pelanggan !== null) rec.nama_pelanggan = String(rec.nama_pelanggan).trim();\nif (rec.jatuh_tempo_bulan !== null) rec.jatuh_tempo_bulan = String(rec.jatuh_tempo_bulan).trim();\nif (rec.jatuh_tempo_tahun !== null) rec.jatuh_tempo_tahun = Number(rec.jatuh_tempo_tahun);\nif (rec.total_harus_dibayar !== null) {\n  const cleanTotal = String(rec.total_harus_dibayar).replace(/[^\\d-]/g, '');\n  rec.total_harus_dibayar = cleanTotal ? Number(cleanTotal) : NaN;\n}\nfor (const k of keys.filter(k => k.startsWith('stand_'))) {\n  if (rec[k] !== null) rec[k] = String(rec[k]).trim();\n}\n\nif (rec.id_pelanggan !== null && !/^\\d{10,13}$/.test(rec.id_pelanggan)) issues.push('Invalid customer ID');\nif (rec.nama_pelanggan !== null && !rec.nama_pelanggan) issues.push('Missing customer name');\nif (rec.jatuh_tempo_tahun !== null && (!Number.isInteger(rec.jatuh_tempo_tahun) || rec.jatuh_tempo_tahun < 2000 || rec.jatuh_tempo_tahun > 2100)) {\n  issues.push('Invalid due year');\n}\nif (rec.total_harus_dibayar !== null && (!Number.isSafeInteger(rec.total_harus_dibayar) || rec.total_harus_dibayar < 0)) {\n  issues.push('Invalid total payable');\n}\n\nconst months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\nconst alias = {jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,may:5,mei:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,agu:8,sep:9,sept:9,oct:10,okt:10,nov:11,dec:12,des:12};\nif (rec.jatuh_tempo_bulan !== null) {\n  const raw = String(rec.jatuh_tempo_bulan).trim().toLowerCase();\n  const index = /^\\d{1,2}$/.test(raw) ? Number(raw) : months.findIndex(m => m.toLowerCase() === raw) + 1 || alias[raw];\n  if (!Number.isInteger(index) || index < 1 || index > 12) issues.push('Invalid due month');\n  else rec.jatuh_tempo_bulan = months[index - 1];\n}\n\nfor (const k of keys.filter(k => k.startsWith('stand_'))) {\n  if (rec[k] !== null && !/^\\d+(\\.\\d+)?$/.test(rec[k])) issues.push('Invalid meter reading ' + k);\n}\n\nlet meta = {};\ntry {\n  meta = $('Process PDFs Sequentially').first().json || {};\n} catch (e) {\n  issues.push('Unable to link source PDF metadata');\n}\n\nreturn {\n  json: {\n    processed_at: new Date().toISOString(),\n    file_id: meta.file_id || null,\n    file_name: meta.file_name || null,\n    submission_id: meta.submission_id || null,\n    technician: meta.technician || null,\n    ocr_status: issues.length ? 'NEEDS_REVIEW' : 'VALID',\n    ...rec,\n    validation_errors: issues,\n    ocr_debug: {\n      gemini_output_keys: Object.keys(source),\n      matched_field_count: best?.matched || 0,\n      parsed_from: best?.path || null\n    }\n  }\n};"
+      },
+      "id": "35d16d39-8b36-4123-81e0-139165483a6a",
+      "name": "Validate 11 Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        3360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "ocr-valid-condition",
+              "leftValue": "={{ $json.ocr_status }}",
+              "rightValue": "VALID",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6a30b37-edcf-42d1-ba11-423c84181522",
+      "name": "Only Valid OCR",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -736,
+        3360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_PLN_MASTER_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "PLN OCR Results",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp OCR": "={{ $json.processed_at }}",
+            "ID Pelanggan": "={{ $json.id_pelanggan }}",
+            "Nama Pelanggan": "={{ $json.nama_pelanggan }}",
+            "Bulan Jatuh Tempo": "={{ $json.jatuh_tempo_bulan }}",
+            "Tahun Jatuh Tempo": "={{ $json.jatuh_tempo_tahun }}",
+            "Total Harus Dibayar": "={{ $json.total_harus_dibayar }}",
+            "Stand Akhir LWBP": "={{ $json.stand_akhir_lwbp }}",
+            "Stand Akhir WBP": "={{ $json.stand_akhir_wbp }}",
+            "Stand Awal LWBP": "={{ $json.stand_awal_lwbp }}",
+            "Stand Awal WBP": "={{ $json.stand_awal_wbp }}",
+            "Stand Akhir kVArh": "={{ $json.stand_akhir_kvarh }}",
+            "Stand Awal kVArh": "={{ $json.stand_awal_kvarh }}",
+            "File ID": "={{ $json.file_id }}",
+            "Status OCR": "={{ $json.ocr_status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp OCR",
+              "displayName": "Timestamp OCR",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ID Pelanggan",
+              "displayName": "ID Pelanggan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nama Pelanggan",
+              "displayName": "Nama Pelanggan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bulan Jatuh Tempo",
+              "displayName": "Bulan Jatuh Tempo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tahun Jatuh Tempo",
+              "displayName": "Tahun Jatuh Tempo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Harus Dibayar",
+              "displayName": "Total Harus Dibayar",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stand Akhir LWBP",
+              "displayName": "Stand Akhir LWBP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stand Akhir WBP",
+              "displayName": "Stand Akhir WBP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stand Awal LWBP",
+              "displayName": "Stand Awal LWBP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stand Awal WBP",
+              "displayName": "Stand Awal WBP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stand Akhir kVArh",
+              "displayName": "Stand Akhir kVArh",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stand Awal kVArh",
+              "displayName": "Stand Awal kVArh",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "File ID",
+              "displayName": "File ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status OCR",
+              "displayName": "Status OCR",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "8186875d-43f6-45c5-a824-fb184d381c45",
+      "name": "Append OCR to Form Spreadsheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -528,
+        3344
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/YOUR_APPS_SCRIPT_DEPLOYMENT_ID/exec",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  secret: 'YOUR_PLN_REPORT_WEBHOOK_SECRET',\n  action: 'create_report',\n  customer_id: $('Validate 11 Fields').item.json.id_pelanggan,\n  bulan_jatuh_tempo: $('Validate 11 Fields').item.json.jatuh_tempo_bulan,\n  tahun_jatuh_tempo: $('Validate 11 Fields').item.json.jatuh_tempo_tahun,\n  file_id: $('Validate 11 Fields').item.json.file_id,\n  technician: $('Validate 11 Fields').item.json.technician\n}) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 5
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "119cdbe0-78df-4b37-8928-cd09d52eb78f",
+      "name": "Generate PLN Report Auto Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -320,
+        3344
+      ],
+      "retryOnFail": false,
+      "onError": "continueRegularOutput",
+      "notesInFlow": true,
+      "notes": "v14.3: Mengambil technician langsung dari Validate 11 Fields. Jika Apps Script gagal di 1 PDF, batch tetap lanjut ke PDF berikutnya."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $input.item.json || {};\nlet body = raw;\nif (typeof raw.body === 'string') {\n  try { body = JSON.parse(raw.body); } catch (e) { body = { ok: false, error: 'NON_JSON_RESPONSE', raw: raw.body.slice(0, 500) }; }\n} else if (raw.body && typeof raw.body === 'object') {\n  body = raw.body;\n}\n\nconst validStatuses = ['PENDING_REVIEW', 'WAITING_HISTORY'];\nconst isSheetUrlValid = /^https:\\/\\/docs\\.google\\.com\\/spreadsheets\\/d\\//.test(body.sheet_url || '');\n\nif (body.ok !== true || !validStatuses.includes(body.status) || !body.sheet_id || !isSheetUrlValid) {\n  return {\n    json: {\n      ok: false,\n      report_status: 'REPORT_CREATION_FAILED',\n      file_id: $('Validate 11 Fields').item.json.file_id,\n      customer_id: $('Validate 11 Fields').item.json.id_pelanggan,\n      technician: $('Validate 11 Fields').item.json.technician,\n      error_detail: JSON.stringify(body).slice(0, 1000)\n    }\n  };\n}\n\nreturn {\n  json: {\n    ok: true,\n    report_status: body.status,\n    file_id: body.file_id,\n    google_sheet_url: body.sheet_url,\n    customer_name: body.customer_name,\n    technician: body.technician,\n    comparison_ready: body.comparison_ready,\n    missing_periods: body.missing_periods || [],\n    warnings: body.warnings || [],\n    pdf_status: body.status === 'PENDING_REVIEW' ? 'WAITING_MANUAL_APPROVAL' : 'WAITING_HISTORY',\n    message: 'Google Sheets created: ' + body.sheet_url\n  }\n};"
+      },
+      "id": "d936d6bd-1bdf-40fb-b1ec-7cc0a57e2e43",
+      "name": "Verify PLN Report Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        3344
+      ],
+      "notesInFlow": true,
+      "notes": "v14.3: Tidak menghentikan sisa antrean PDF jika 1 laporan gagal dibuat."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json || {};\nreturn {\n  json: {\n    processed_at: item.processed_at,\n    file_id: item.file_id,\n    file_name: item.file_name,\n    submission_id: item.submission_id,\n    technician: item.technician,\n    ocr_status: item.ocr_status,\n    validation_errors: (item.validation_errors || []).join('; '),\n    raw_extracted: {\n      id_pelanggan: item.id_pelanggan,\n      nama_pelanggan: item.nama_pelanggan,\n      jatuh_tempo_bulan: item.jatuh_tempo_bulan,\n      jatuh_tempo_tahun: item.jatuh_tempo_tahun,\n      total_harus_dibayar: item.total_harus_dibayar\n    }\n  }\n};"
+      },
+      "id": "1652a5e7-ec72-426b-84a7-5052b2122200",
+      "name": "Log OCR Needs Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        3568
+      ],
+      "notesInFlow": true,
+      "notes": "Menampung PDF yang gagal validasi 11 field agar mudah dicek atau dihubungkan ke notifikasi/Sheet Review."
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "79948c06-15f7-41e8-a24d-956a32cb48c5",
+      "name": "Pause Before Next PDF",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -112,
+        3568
+      ],
+      "notesInFlow": true,
+      "webhookId": "eb5a4629-02db-45ea-a81c-b1727da26a52",
+      "notes": "Jeda 3 detik setelah laporan atau review, sebelum melanjutkan PDF berikutnya."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receive Google Forms Files": {
+      "main": [
+        [
+          {
+            "node": "Split PDF IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split PDF IDs": {
+      "main": [
+        [
+          {
+            "node": "Process PDFs Sequentially",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process PDFs Sequentially": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Gemini Extract PLN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Extract PLN": {
+      "main": [
+        [
+          {
+            "node": "Validate 11 Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate 11 Fields": {
+      "main": [
+        [
+          {
+            "node": "Only Valid OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Valid OCR": {
+      "main": [
+        [
+          {
+            "node": "Append OCR to Form Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log OCR Needs Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append OCR to Form Spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Generate PLN Report Auto Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate PLN Report Auto Template": {
+      "main": [
+        [
+          {
+            "node": "Verify PLN Report Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify PLN Report Links": {
+      "main": [
+        [
+          {
+            "node": "Pause Before Next PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log OCR Needs Review": {
+      "main": [
+        [
+          {
+            "node": "Pause Before Next PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause Before Next PDF": {
+      "main": [
+        [
+          {
+            "node": "Process PDFs Sequentially",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  }
+}

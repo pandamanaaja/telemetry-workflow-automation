@@ -58,7 +58,15 @@ flowchart TD
 * **Smart Adaptive Image Layout**: Calculates the number of uploaded site documentation photos and dynamically resizes image bounding boxes (`magnitude: PT`) to guarantee clean, unclipped table cells in the exported PDF.
 * Exports evaluated PDF blobs to designated Google Drive distribution folders and posts confirmation payloads back to the caller.
 
-### 3. ⚡ High-Performance Data Processing & Anomaly Scanner (`apps-script/`)
+### 3. ⚡ Multi-Customer PLN Billing OCR, 3-Month Comparison & CloudConvert PDF Merger
+* **Sequential Gemini Multimodal OCR & Sheet Builder (`n8n-workflows/05-pln-gemini-ocr-sheet-builder.json`)**:
+  * Extracts 11 strict billing fields (`LWBP`, `WBP`, `kVArh`, due period, and total payable) per uploaded invoice PDF, validates technician attribution, and triggers automated multi-sheet report creation.
+* **Manual Review Gate & Synchronous 3-PDF Merger (`n8n-workflows/06-pln-finalize-pdf-cloudconvert.json`)**:
+  * Triggered upon checkbox approval in `CONTROL!B8`, exports Portrait `TN` and Landscape `PERBANDINGAN` single-page PDFs via direct `gid` range bounds, merges them with the original PLN invoice via CloudConvert (`sync.api.cloudconvert.com`), and cleans up temporary Drive artifacts automatically.
+* **PLN Auto Report Engine v14.5 (`apps-script/02-report-generators/pln_auto_report_v14_engine.js`)**:
+  * Single-read cached OCR bank lookup, batched 3-month comparison table writes, Roman numeral document numbering, and deadlock-free `onEdit` review triggers.
+
+### 4. 📊 High-Performance Data Processing & Anomaly Scanner (`apps-script/`)
 * **Statistical Outlier Detection (`01-master-metering/anomaly_detection.js`)**:
   * Employs a rolling window ($N=3$) Z-Score algorithm ($\mu \pm 2.5\sigma$) with minimum absolute threshold filters ($\Delta \ge 2.0$) to highlight anomalous telemetry spikes.
   * Identifies blank values in timestamped rows while bypassing text headers and non-numeric labels.
@@ -84,7 +92,9 @@ telemetry-workflow-automation/
 │   ├── 01-industrial-telemetry-ocr.json        # Telemetry OCR & metric parsing workflow
 │   ├── 02-site-visit-report-autocrat.json      # Dynamic Docs-to-PDF report generator
 │   ├── 03-cleaning-report-generator.json       # Maintenance report & callback synchronizer
-│   └── 04-pln-bill-ocr-extractor.json          # Multimodal PLN billing OCR & auto-recap workflow
+│   ├── 04-pln-bill-ocr-extractor.json          # Multimodal PLN billing OCR & auto-recap workflow
+│   ├── 05-pln-gemini-ocr-sheet-builder.json    # Multi-customer PLN Gemini OCR & auto report sheet builder
+│   └── 06-pln-finalize-pdf-cloudconvert.json   # PLN manual review approval & CloudConvert 3-PDF merger
 │
 └── apps-script/
     ├── 01-master-metering/
@@ -93,7 +103,9 @@ telemetry-workflow-automation/
     ├── 02-report-generators/
     │   ├── xlsx_multi_sheet_exporter.js        # Scheduled daily/weekly/monthly XLSX exporter
     │   ├── baseline_pdf_generator.js           # Incremental pointer-based PDF report generator
-    │   └── pln_billing_report_builder.js       # Automated PLN billing executive report builder
+    │   ├── pln_billing_report_builder.js       # Automated PLN billing executive report builder
+    │   ├── pln_auto_report_v14_engine.js       # Multi-customer PLN auto report & 3-month comparison engine
+    │   └── pln_single_page_pdf_exporter.js     # Single-page A4 Portrait/Landscape GID PDF exporter
     ├── 03-data-deduplication/
     │   ├── duplicate_processor.js              # Composite-key deduplication processor
     │   └── master_response_dedup_checker.js    # Master response deduplication and normalization
@@ -105,7 +117,8 @@ telemetry-workflow-automation/
     │   ├── site_visit_report_dispatcher.js     # Site visit inspection dispatcher with Docs API & PDF export
     │   ├── cleaning_report_webhook.js          # Asynchronous form submission dispatcher & callback
     │   ├── telemetry_form_submit.js            # Image extractor and telemetry webhook dispatcher
-    │   └── pln_form_submit.js                  # PLN bill upload dispatcher to n8n webhook
+    │   ├── pln_form_submit.js                  # PLN bill upload dispatcher to n8n webhook
+    │   └── pln_form_submit_v14_webhook.js      # Multi-PDF PLN form submit dispatcher with technician validation
     └── 07-drive-maintenance/
         └── auto_delete_images_except.js        # High-performance server-side image cleanup with exclusion
 ```
@@ -123,7 +136,7 @@ telemetry-workflow-automation/
    * **Google Sheets OAuth2**
 4. Update placeholder values:
    * Replace `YOUR_OCR_SPACE_API_KEY` with your OCR.space API key.
-   * Replace `YOUR_TELEMETRY_SPREADSHEET_ID` with your Google Sheet ID.
+   * Replace `YOUR_TELEMETRY_SPREADSHEET_ID` and `YOUR_PLN_MASTER_SPREADSHEET_ID` with your Google Sheet IDs.
 5. Toggle workflow to **Active**.
 
 ### 2. Installing Google Apps Script

@@ -9,7 +9,9 @@ describe('n8n Workflow Structure & Integrity Validation', () => {
     '01-industrial-telemetry-ocr.json',
     '02-site-visit-report-autocrat.json',
     '03-cleaning-report-generator.json',
-    '04-pln-bill-ocr-extractor.json'
+    '04-pln-bill-ocr-extractor.json',
+    '05-pln-gemini-ocr-sheet-builder.json',
+    '06-pln-finalize-pdf-cloudconvert.json'
   ];
 
   workflowFiles.forEach(fileName => {
