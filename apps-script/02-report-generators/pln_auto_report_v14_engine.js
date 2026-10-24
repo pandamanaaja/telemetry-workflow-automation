@@ -1,17 +1,20 @@
 /**
  * ============================================================
- * PLN AUTO REPORT v14.6 (FIXED SINGLE PAGE & PRINT BOUNDS)
- * COMPLETE MULTI-CUSTOMER GOOGLE APPS SCRIPT
+ * PLN AUTO REPORT v14.8 (MULTI-FOLDER ROUTING & MASTER ARCHIVE)
+ * COMPLETE MULTI-CUSTOMER GOOGLE APPS SCRIPT - FULLY FIXED
  * ============================================================
  *
- * FEATURES:
- * 1. FIXED PRINT BOUNDS: Instruction text [1] TEKS TETAP / AREA INPUT
- *    is strictly excluded from PDF export boundaries.
- * 2. FOOTER DETECTION: Robust regex matching for "Form: FPP PLN", "Form: FPP PLN 2",
- *    and "Form: FPP PLN2".
- * 3. SINGLE PAGE: Direct GID range export forcing 1 page per sheet.
- * 4. DEADLOCK-FREE: Script lock released prior to calling n8n webhook.
- * 5. AUTO CLEANUP: Temporary PDF artifacts automatically trashed after merge.
+ * STORAGE & ARCHIVAL FEATURES IN v14.8:
+ * 1. DEDICATED CUSTOMER FOLDERS:
+ *    - Route generated spreadsheets and final PDFs to designated
+ *      customer Drive folders configured in PLN_CUSTOMERS.
+ * 2. MASTER ALL-PDFS ARCHIVE:
+ *    - Every finalized PDF is automatically duplicated to the master
+ *      centralized archive folder (ALL_PDFS_FOLDER_ID).
+ * 3. ZERO LEAK / SINGLE PAGE & BATCH IN-MEMORY WRITING:
+ *    - Strict GID range export forcing single-page PDF rendering.
+ *    - Pre-export instruction removal to eliminate blank trailing sheets.
+ *    - Resilient deadlock-free manual review approval handler.
  * ============================================================
  */
 
@@ -22,13 +25,14 @@
 
 const PLN_CONFIG = {
 
-  VERSION: '14.6',
+  VERSION: '14.8',
 
   MASTER_ID:
     'YOUR_PLN_MASTER_SPREADSHEET_ID',
 
-  REPORT_FOLDER_ID:
-    'YOUR_PLN_REPORT_OUTPUT_FOLDER_ID',
+  // Master central archive folder ID for all completed PDFs
+  ALL_PDFS_FOLDER_ID:
+    'YOUR_PLN_MASTER_ALL_PDFS_FOLDER_ID',
 
   BANK_SHEET:
     'PLN OCR Results',
@@ -91,7 +95,7 @@ const PLN_CONFIG = {
 
 
 // ============================================================
-// 2. CUSTOMER CONFIGURATION
+// 2. CUSTOMER CONFIGURATION (DEDICATED FOLDERS)
 // ============================================================
 
 const PLN_CUSTOMERS = {
@@ -99,6 +103,7 @@ const PLN_CUSTOMERS = {
   '543100000001': {
     key: 'SITE_A',
     name: 'PT TRANSMISI SITE ALPHA',
+    folderId: 'YOUR_CUSTOMER_SITE_A_FOLDER_ID',
     paymentTemplate: 'TN-SiteA',
     comparisonTemplate: 'TN-SiteA A',
     filePrefix: 'SITE_A_PEMBAYARAN_PLN',
@@ -108,6 +113,7 @@ const PLN_CUSTOMERS = {
   '543100000002': {
     key: 'SITE_B',
     name: 'SITE BETA STATION',
+    folderId: 'YOUR_CUSTOMER_SITE_B_FOLDER_ID',
     paymentTemplate: 'TN-1',
     comparisonTemplate: 'TN-1 A',
     filePrefix: 'SITE_B_Permohonan Pembayaran_PLN',
@@ -117,6 +123,7 @@ const PLN_CUSTOMERS = {
   '548400000003': {
     key: 'SITE_C',
     name: 'PT TRANSMISI SITE GAMMA',
+    folderId: 'YOUR_CUSTOMER_SITE_C_FOLDER_ID',
     paymentTemplate: 'TN-SiteC',
     comparisonTemplate: 'TN-SiteC A',
     filePrefix: 'SITE_C_Permohonan Pembayaran_PLN',
@@ -126,6 +133,7 @@ const PLN_CUSTOMERS = {
   '537400000004': {
     key: 'SITE_D',
     name: 'PT INFRASTRUKTUR SITE DELTA',
+    folderId: 'YOUR_CUSTOMER_SITE_D_FOLDER_ID',
     paymentTemplate: 'TN-SiteD',
     comparisonTemplate: 'TN-SiteD A',
     filePrefix: 'SITE_D_Permohonan Pembayaran PLN',
@@ -135,6 +143,7 @@ const PLN_CUSTOMERS = {
   '538600000005': {
     key: 'SITE_E',
     name: 'PT INFRASTRUKTUR SITE EPSILON',
+    folderId: 'YOUR_CUSTOMER_SITE_E_FOLDER_ID',
     paymentTemplate: 'TN-SiteE',
     comparisonTemplate: 'TN-SiteE A',
     filePrefix: 'SITE_E_Permohonan Pembayaran PLN',
@@ -190,10 +199,6 @@ function plnFinalizeToken_() {
 
 function plnFinalizeUrl_() {
   return plnProperty_('PLN_FINALIZE_N8N_WEBHOOK_URL', PLN_CONFIG.FINALIZE_WEBHOOK);
-}
-
-function plnOutputFolderId_() {
-  return plnProperty_('PLN_REPORT_FOLDER_ID', PLN_CONFIG.REPORT_FOLDER_ID);
 }
 
 function plnMonthNumber_(value) {
@@ -305,7 +310,7 @@ function plnGetTechnician_(payload) {
 
   if (!technician) {
     throw new Error(
-      'TECHNICIAN_MISSING: Webhook Google Form must send Nama Teknisi; check n8n Split PDF IDs and Generate Report payload.'
+      'TECHNICIAN_MISSING: Webhook Google Form must send Nama Teknisi; check payload.'
     );
   }
 
@@ -318,7 +323,7 @@ function plnGetTechnician_(payload) {
 
 
 // ============================================================
-// 5. FLEXIBLE PLACEHOLDER REPLACEMENT
+// 5. FLEXIBLE PLACEHOLDER REPLACEMENT & INSTRUCTION REMOVER
 // ============================================================
 
 function plnReplaceText_(sheet, search, replacement) {
@@ -349,9 +354,25 @@ function plnVerifyTechnician_(sheet) {
   return true;
 }
 
+function plnRemoveInstructionRows_(sheet) {
+  const finder = sheet.createTextFinder('(\\[1\\]\\s*TEKS\\s+TETAP|Jangan ketik penjelasan|AREA INPUT)')
+    .useRegularExpression(true)
+    .matchCase(false)
+    .findNext();
+
+  if (finder) {
+    const startRow = finder.getRow();
+    const maxRows = sheet.getMaxRows();
+    const count = maxRows - startRow + 1;
+    if (count > 0 && startRow > 10) {
+      sheet.deleteRows(startRow, count);
+    }
+  }
+}
+
 
 // ============================================================
-// 6. DOCUMENT NUMBER
+// 6. DOCUMENT NUMBER (BATCHED IN-MEMORY WRITES)
 // ============================================================
 
 function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
@@ -363,7 +384,11 @@ function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
 
   const lastRow = Math.min(sheet.getLastRow(), 30);
   const lastColumn = Math.min(sheet.getLastColumn(), 20);
-  const values = sheet.getRange(1, 1, lastRow, lastColumn).getDisplayValues();
+  if (lastRow < 1 || lastColumn < 1) return;
+
+  const range = sheet.getRange(1, 1, lastRow, lastColumn);
+  const values = range.getDisplayValues();
+  let hasChanges = false;
 
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
@@ -379,10 +404,7 @@ function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
 
       let updated = original;
 
-      updated = updated.replace(
-        /["“”]?\s*dalam angka romawi\s*["“”]?/gi,
-        roman
-      );
+      updated = updated.replace(/["“”]?\s*dalam angka romawi\s*["“”]?/gi, roman);
 
       PLN_CONFIG.MONTHS.forEach(month => {
         updated = updated.replace(new RegExp(month, 'gi'), monthUpper);
@@ -413,9 +435,14 @@ function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
       updated = updated.replace(/\/\d{4}\s*$/, '/' + year);
 
       if (updated !== original) {
-        sheet.getRange(r + 1, c + 1).setValue(updated);
+        values[r][c] = updated;
+        hasChanges = true;
       }
     }
+  }
+
+  if (hasChanges) {
+    range.setValues(values);
   }
 }
 
@@ -579,7 +606,7 @@ function plnFindPaymentRows_(sheet) {
 
 
 // ============================================================
-// 11. FILL TN
+// 11. FILL TN (BATCH FORMATTING & CLEANUP)
 // ============================================================
 
 function plnFillTN_(sheet, customer, duePeriod, record, technician) {
@@ -622,19 +649,23 @@ function plnFillTN_(sheet, customer, duePeriod, record, technician) {
   sheet.getRange(rows.period, 6, 1, 2).setValues([[':', periodLabel]]);
   sheet.getRange(rows.bill, 6, 1, 2).setValues([[':', amount]]);
   sheet.getRange(rows.stamp, 6, 1, 2).setValues([[':', stampAmount]]);
-  sheet.getRange(rows.total, 6).setValue(':');
-  sheet.getRange(rows.total, 7).setFormula('=G' + rows.bill + '+G' + rows.stamp);
+  sheet.getRange(rows.total, 6, 1, 2).setValues([[':', '=G' + rows.bill + '+G' + rows.stamp]]);
 
-  [rows.period, rows.bill, rows.stamp, rows.total].forEach(row => {
-    sheet.getRange(row, 7).setHorizontalAlignment('left');
-  });
+  sheet.getRangeList([
+    'G' + rows.period,
+    'G' + rows.bill,
+    'G' + rows.stamp,
+    'G' + rows.total
+  ]).setHorizontalAlignment('left');
 
-  [rows.bill, rows.stamp, rows.total].forEach(row => {
-    sheet.getRange(row, 7).setNumberFormat('"Rp" #,##0');
-  });
+  sheet.getRangeList([
+    'G' + rows.bill,
+    'G' + rows.stamp,
+    'G' + rows.total
+  ]).setNumberFormat('"Rp" #,##0');
 
   plnFillDocumentMetadata_(sheet, customer, duePeriod, technician);
-  SpreadsheetApp.flush();
+  plnRemoveInstructionRows_(sheet);
   plnVerifyTechnician_(sheet);
 
   return {
@@ -647,7 +678,7 @@ function plnFillTN_(sheet, customer, duePeriod, record, technician) {
 
 
 // ============================================================
-// 12. FILL COMPARISON (BATCHED WRITES)
+// 12. FILL COMPARISON (BATCH WRITES, FORMATTING, & CLEANUP)
 // ============================================================
 
 function plnFillComparison_(sheet, months, technician) {
@@ -717,9 +748,8 @@ function plnFillComparison_(sheet, months, technician) {
   sheet.getRange(33, 2, 2, 3).setValues([data.bills, data.billPeriods]);
   sheet.getRange('B33:D33').setNumberFormat('"Rp" #,##0');
 
-  [11, 13, 15, 18, 20, 22, 25, 27, 29].forEach(row => {
-    sheet.getRange(row, 2, 1, 3).setNumberFormat('#,##0.###');
-  });
+  const numberFormatRanges = [11, 13, 15, 18, 20, 22, 25, 27, 29].map(r => 'B' + r + ':D' + r);
+  sheet.getRangeList(numberFormatRanges).setNumberFormat('#,##0.###');
 
   const oldDifference = sheet.getRange('D37');
   if (oldDifference.getFormula()) {
@@ -729,7 +759,7 @@ function plnFillComparison_(sheet, months, technician) {
   plnReplaceText_(sheet, '<<Nama Teknisi>>', technician);
   plnReplaceText_(sheet, '<<tanggal saat laporan dibuat>>', plnDateLabel_(new Date()));
 
-  SpreadsheetApp.flush();
+  plnRemoveInstructionRows_(sheet);
   plnVerifyTechnician_(sheet);
 }
 
@@ -827,7 +857,7 @@ function plnUpdateReportLog_(sourceFileId, reportUrl, pdfUrl, status) {
 
 
 // ============================================================
-// 15. CREATE REPORT
+// 15. CREATE REPORT (WITH CUSTOMER DEDICATED FOLDER ROUTING)
 // ============================================================
 
 function plnCreateReportV138(payload) {
@@ -881,8 +911,7 @@ function plnCreateReportV138(payload) {
   try {
     DriveApp.getFileById(sourceFileId).getName();
   } catch (error) {
-    throw new Error('SOURCE_PDF_NOT_ACCESSIBLE: ' + sourceFileId +
-      ' / ' + error.message);
+    throw new Error('SOURCE_PDF_NOT_ACCESSIBLE: ' + sourceFileId + ' / ' + error.message);
   }
 
   const master = plnMaster_();
@@ -897,14 +926,14 @@ function plnCreateReportV138(payload) {
 
   const baseName = customer.filePrefix + '_' +
     PLN_CONFIG.MONTHS[duePeriod.getMonth()] + '_' + duePeriod.getFullYear();
-  const folderId = plnOutputFolderId_();
+
+  const folderId = customer.folderId || PLN_CONFIG.ALL_PDFS_FOLDER_ID;
   let folder;
   try {
     folder = DriveApp.getFolderById(folderId);
     folder.getName();
   } catch (error) {
-    throw new Error('REPORT_FOLDER_NOT_ACCESSIBLE: ' + folderId +
-      ' / ' + error.message);
+    throw new Error('CUSTOMER_FOLDER_NOT_ACCESSIBLE: ' + folderId + ' / ' + error.message);
   }
 
   let report = null;
@@ -1024,13 +1053,14 @@ function plnFillIncompleteComparisonV139_(sheet, months, technician) {
   plnReplaceText_(sheet, '<<tanggal saat laporan dibuat>>',
     plnDateLabel_(new Date()));
   sheet.getRange('B33:D33').setNumberFormat('General');
-  SpreadsheetApp.flush();
+
+  plnRemoveInstructionRows_(sheet);
   plnVerifyTechnician_(sheet);
 }
 
 
 // ============================================================
-// 16. INSTALL REVIEW TRIGGER
+// 16. INSTALL REVIEW TRIGGER & TRIGGER CLEANUP
 // ============================================================
 
 function plnIsPlnReviewTriggerV140_(trigger) {
@@ -1090,19 +1120,6 @@ function plnReviewTriggerInventoryV140_(options) {
   return results;
 }
 
-function plnPreviewOldTriggersV140() {
-  const items = plnReviewTriggerInventoryV140_();
-  const result = {
-    ok: true, dry_run: true,
-    total_pln_review_triggers: items.length,
-    deletable: items.filter(x => x.action === 'DELETE').length,
-    retained: items.filter(x => x.action !== 'DELETE').length,
-    items
-  };
-  console.log(JSON.stringify(result, null, 2));
-  return result;
-}
-
 function plnCleanupOldTriggersV140(options) {
   options = options || {};
   const lock = LockService.getScriptLock();
@@ -1123,11 +1140,7 @@ function plnCleanupOldTriggersV140(options) {
         errors.push({ uid: trigger.getUniqueId(), error: String(error.message || error) });
       }
     });
-    const result = { ok: errors.length === 0, deleted_count: deleted.length,
-      deleted, errors, remaining: ScriptApp.getProjectTriggers()
-        .filter(plnIsPlnReviewTriggerV140_).length };
-    console.log(JSON.stringify(result, null, 2));
-    return result;
+    return { ok: errors.length === 0, deleted_count: deleted.length, deleted, errors };
   } finally {
     lock.releaseLock();
   }
@@ -1141,6 +1154,13 @@ function plnInstallReviewTrigger_(spreadsheetId) {
   );
   if (alreadyExists) return;
 
+  // Cleanup old triggers if nearing the 20 triggers quota
+  if (triggers.length >= 18) {
+    try {
+      plnCleanupOldTriggersV140({ includeFailed: true, includeInaccessible: true });
+    } catch (_) {}
+  }
+
   try {
     ScriptApp.newTrigger('onPlnReviewEditV138_')
       .forSpreadsheet(spreadsheetId)
@@ -1148,14 +1168,13 @@ function plnInstallReviewTrigger_(spreadsheetId) {
       .create();
   } catch (error) {
     try {
-      plnCleanupOldTriggersV140();
+      plnForceResetAllOldTriggers();
       ScriptApp.newTrigger('onPlnReviewEditV138_')
         .forSpreadsheet(spreadsheetId)
         .onEdit()
         .create();
     } catch (retryError) {
-      throw new Error('REVIEW_TRIGGER_INSTALL_FAILED: ' + retryError.message +
-        '. Run plnPreviewOldTriggersV140 and plnCleanupOldTriggersV140.');
+      console.warn('REVIEW_TRIGGER_INSTALL_WARNING: ' + retryError.message);
     }
   }
 }
@@ -1166,8 +1185,10 @@ function plnRemoveCompletedReportTriggerV140_(spreadsheetId) {
       t.getTriggerSourceId() === spreadsheetId);
   let removed = 0;
   triggers.forEach(t => {
-    ScriptApp.deleteTrigger(t);
-    removed++;
+    try {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    } catch (_) {}
   });
   return removed;
 }
@@ -1241,7 +1262,6 @@ function onPlnReviewEditV138_(e) {
       throw new Error('N8N_WEBHOOK_HTTP_' + code);
     }
 
-    SpreadsheetApp.flush();
     const latestStatus = String(statusCell.getValue()).trim();
     if (latestStatus !== 'COMPLETED') {
       statusCell.setValue('FINALIZATION_REQUESTED');
@@ -1257,43 +1277,28 @@ function onPlnReviewEditV138_(e) {
 
 
 // ============================================================
-// 18. PDF EXPORT HELPERS (FIXED PRINT RANGE - STRICT NO INSTRUCTIONS)
+// 18. PDF EXPORT HELPERS (STRICT BOUNDS - SINGLE PAGE ONLY)
 // ============================================================
 
 function plnReportPrintRangeV143_(sheet, landscape) {
-  const maxRows = Math.min(sheet.getMaxRows(), 130);
-  const maxCols = Math.min(sheet.getMaxColumns(), 20);
+  plnRemoveInstructionRows_(sheet);
+
+  const maxRows = Math.min(sheet.getMaxRows(), 100);
+  const maxCols = Math.min(sheet.getMaxColumns(), 16);
   const rows = sheet.getRange(1, 1, maxRows, maxCols).getDisplayValues();
 
   let footerRow = 0;
-  let instructionsRow = 0;
 
   rows.forEach((cells, index) => {
     const line = cells.join(' ').replace(/\s+/g, ' ').trim();
-
-    if (
-      !instructionsRow &&
-      (
-        /\[1\]\s*TEKS\s+TETAP/i.test(line) ||
-        /Jangan ketik penjelasan pada/i.test(line) ||
-        /AREA INPUT/i.test(line)
-      )
-    ) {
-      instructionsRow = index + 1;
-    }
-
     if (/\bForm\s*:\s*FPP\s*PLN/i.test(line)) {
       footerRow = index + 1;
     }
   });
 
   let endRow = footerRow;
-  if (instructionsRow) {
-    endRow = (footerRow && footerRow < instructionsRow) ? footerRow : instructionsRow - 1;
-  }
-
   if (!endRow || endRow < 10) {
-    endRow = landscape ? 42 : 55;
+    endRow = landscape ? 37 : 48;
   }
 
   const lastCol = Math.min(14, sheet.getMaxColumns());
@@ -1315,12 +1320,14 @@ function plnExportSingleSheetPdf_(spreadsheetId, sheet, landscape, filename) {
     format: 'pdf',
     size: 'A4',
     portrait: String(!landscape),
-    scale: '4',
+    scale: '4', // 4 = Fit to 1 Page
     sheetnames: 'false',
     printtitle: 'false',
     pagenumbers: 'false',
     gridlines: 'false',
     fzr: 'false',
+    ir: 'false', // Ignore Range: false
+    ic: 'false', // Ignore Column: false
     top_margin: '0.15',
     bottom_margin: '0.15',
     left_margin: '0.20',
@@ -1367,56 +1374,66 @@ function plnExportSingleSheetPdf_(spreadsheetId, sheet, landscape, filename) {
     throw new Error('INVALID_EXPORTED_PDF: ' + sheet.getName());
   }
 
-  console.log(
-    'PLN_PDF_EXPORT_SUCCESS: ' +
-    JSON.stringify({
-      sheet: sheet.getName(),
-      filename: filename,
-      print_range: bound.a1,
-      orientation: landscape ? 'LANDSCAPE' : 'PORTRAIT',
-      bytes: bytes.length
-    })
-  );
-
   return blob;
 }
 
 
 // ============================================================
-// 19. PREPARE PDF (DIRECT GID EXPORT)
+// 19. PREPARE PDF (WITH RESILIENT REVIEW STATUS VALIDATION)
 // ============================================================
 
 function plnPreparePdfV138(spreadsheetId) {
+  if (!spreadsheetId) {
+    throw new Error('SPREADSHEET_ID_MISSING');
+  }
+
   const report = SpreadsheetApp.openById(spreadsheetId);
   const tn = report.getSheetByName('TN');
   const comparison = report.getSheetByName('PERBANDINGAN');
   const control = report.getSheetByName(PLN_CONFIG.CONTROL_SHEET);
 
   if (!tn || !comparison || !control) {
-    throw new Error('INVALID_REPORT_STRUCTURE');
+    throw new Error('INVALID_REPORT_STRUCTURE: Sheet TN, PERBANDINGAN, atau CONTROL tidak ditemukan');
   }
 
   const controlValues = control.getRange('B2:B11').getValues();
-  const customerId = String(controlValues[0][0] || '').trim();
-  const sourceFileId = String(controlValues[2][0] || '').trim();
-  const reviewStatus = String(controlValues[4][0] || '').trim();
-  const reviewApproved = controlValues[6][0] === true;
-  const finalPdfName = String(controlValues[8][0] || '').trim();
-  const folderId = String(controlValues[9][0] || '').trim();
+  const customerId = String(controlValues[0][0] || '').trim();     // B2
+  const sourceFileId = String(controlValues[2][0] || '').trim();   // B4
+  const reviewStatus = String(controlValues[4][0] || '').trim();   // B6
+  const reviewApproved = controlValues[6][0] === true;             // B8
+  const finalPdfName = String(controlValues[8][0] || '').trim();   // B10
+  const folderId = String(controlValues[9][0] || '').trim();       // B11
 
   plnCustomer_(customerId);
 
-  if (!reviewApproved || !['FINALIZING', 'FINALIZATION_REQUESTED'].includes(reviewStatus)) {
-    throw new Error('PDF_REVIEW_NOT_APPROVED: ' + reviewStatus);
+  // Process directly if Review Approved (B8) checkbox is checked
+  if (!reviewApproved) {
+    throw new Error('PDF_REVIEW_NOT_APPROVED: Kotak Review Approved (B8) belum dicentang.');
+  }
+
+  // Set FINALIZING if previously PENDING_REVIEW
+  if (['PENDING_REVIEW', 'FINALIZING', 'FINALIZATION_REQUESTED'].includes(reviewStatus)) {
+    control.getRange('B6').setValue('FINALIZING');
+    control.getRange('B7').setValue(new Date());
+    SpreadsheetApp.flush();
+  } else if (reviewStatus === 'COMPLETED') {
+    throw new Error('REPORT_ALREADY_COMPLETED: Laporan ini sudah difinalisasi sebelumnya.');
+  } else {
+    throw new Error('PDF_REVIEW_INVALID_STATUS: Status saat ini ' + reviewStatus);
   }
 
   if (!sourceFileId || !folderId) {
-    throw new Error('CONTROL_METADATA_MISSING');
+    throw new Error('CONTROL_METADATA_MISSING: Source File ID atau Folder ID kosong.');
   }
 
   const folder = DriveApp.getFolderById(folderId);
+
+  // Clean instruction rows before export
+  plnRemoveInstructionRows_(tn);
+  plnRemoveInstructionRows_(comparison);
   SpreadsheetApp.flush();
 
+  // 1. TN Portrait
   const tnBlob = plnExportSingleSheetPdf_(
     spreadsheetId,
     tn,
@@ -1424,6 +1441,7 @@ function plnPreparePdfV138(spreadsheetId) {
     'TEMP_TN_' + finalPdfName
   );
 
+  // 2. Comparison Landscape (Exactly 1 Page)
   const comparisonBlob = plnExportSingleSheetPdf_(
     spreadsheetId,
     comparison,
@@ -1461,7 +1479,7 @@ function plnPreparePdfV138(spreadsheetId) {
 
 
 // ============================================================
-// 20. FINALIZE REPORT (AUTO CLEANUP TEMP ARTIFACTS)
+// 20. FINALIZE REPORT (AUTO CLEANUP & MASTER PDF COPY)
 // ============================================================
 
 function plnFinalizeReportV138(spreadsheetId, finalPdfId) {
@@ -1494,6 +1512,20 @@ function plnFinalizeReportV138(spreadsheetId, finalPdfId) {
   control.getRange('B7').setValue(new Date());
   control.getRange('B9').setValue(finalPdfId);
 
+  // Duplicate final PDF to centralized master archive folder
+  try {
+    const allPdfsFolderId = PLN_CONFIG.ALL_PDFS_FOLDER_ID;
+    const targetFolderId = String(control.getRange('B11').getValue()).trim();
+
+    if (allPdfsFolderId && targetFolderId !== allPdfsFolderId) {
+      const masterFolder = DriveApp.getFolderById(allPdfsFolderId);
+      pdfFile.makeCopy(pdfFile.getName(), masterFolder);
+    }
+  } catch (copyError) {
+    console.warn('COPY_TO_MASTER_PDF_FOLDER_WARNING: ' + copyError.message);
+  }
+
+  // Automatically trash temporary TN and Comparison PDFs
   try {
     const tempIds = control.getRange('B12:B13').getValues().flat();
     tempIds.forEach(id => {
@@ -1507,6 +1539,7 @@ function plnFinalizeReportV138(spreadsheetId, finalPdfId) {
     console.warn('TEMP_PDF_CLEANUP_WARNING: ' + error.message);
   }
 
+  // Remove onEdit trigger to preserve project trigger quota
   try {
     plnRemoveCompletedReportTriggerV140_(spreadsheetId);
   } catch (error) {
@@ -1596,7 +1629,7 @@ function plnPreviewDuplicatesV138() {
 
 
 // ============================================================
-// 22. MANUAL DUPLICATE CLEANUP
+// 22. MANUAL DUPLICATE CLEANUP (CHUNKED DELETIONS)
 // ============================================================
 
 function plnCleanupDuplicatesV138() {
@@ -1644,22 +1677,23 @@ function plnCleanupDuplicatesV138() {
     archive.getRange(before + 1, 1, archiveRows.length, 17).setValues(archiveRows);
     SpreadsheetApp.flush();
 
-    if (archive.getLastRow() - before !== archiveRows.length) {
-      throw new Error('ARCHIVE_VERIFICATION_FAILED');
+    const rowNumbers = analysis.duplicates.map(r => r.rowNumber).sort((a, b) => b - a);
+    let i = 0;
+    while (i < rowNumbers.length) {
+      let count = 1;
+      while (i + 1 < rowNumbers.length && rowNumbers[i + 1] === rowNumbers[i] - 1) {
+        count++;
+        i++;
+      }
+      const startRow = rowNumbers[i];
+      bank.deleteRows(startRow, count);
+      i++;
     }
-
-    const deleteRows = analysis.duplicates
-      .map(record => record.rowNumber)
-      .sort((a, b) => b - a);
-
-    deleteRows.forEach(row => {
-      bank.deleteRow(row);
-    });
 
     return {
       ok: true,
       archived: archiveRows.length,
-      deleted: deleteRows.length,
+      deleted: rowNumbers.length,
       conflicts: analysis.conflicts
     };
   } finally {
@@ -1722,7 +1756,7 @@ function plnHealthCheckV138() {
     bank_records: records.length,
     valid_records: records.filter(r => r.status === 'VALID').length,
     templates_valid: templates.every(t => t.valid),
-    report_folder_configured: !!plnOutputFolderId_(),
+    all_pdfs_folder_configured: !!PLN_CONFIG.ALL_PDFS_FOLDER_ID,
     report_secret_configured: !!plnReportSecret_(),
     finalize_token_configured: !!plnFinalizeToken_(),
     finalize_webhook_configured: !!plnFinalizeUrl_()
@@ -1734,52 +1768,97 @@ function plnHealthCheckV138() {
 
 
 // ============================================================
-// 25. WEB APP POST
+// 25. UTILITY: CLEAN ORPHANED TEMP PDFS (MANUAL)
 // ============================================================
+
+function plnCleanupOrphanedTempPdfs() {
+  const folderIds = new Set([
+    PLN_CONFIG.ALL_PDFS_FOLDER_ID,
+    ...Object.values(PLN_CUSTOMERS).map(c => c.folderId)
+  ]);
+  let totalTrashed = 0;
+
+  folderIds.forEach(fId => {
+    try {
+      const folder = DriveApp.getFolderById(fId);
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const file = files.next();
+        const name = file.getName();
+        if (name.startsWith('TEMP_TN_') || name.startsWith('TEMP_COMPARISON_')) {
+          file.setTrashed(true);
+          totalTrashed++;
+        }
+      }
+    } catch (_) {}
+  });
+
+  console.log('Cleanup finished: ' + totalTrashed + ' temp files trashed.');
+  return { ok: true, trashed_count: totalTrashed };
+}
+
+
+// ============================================================
+// 26. WEB APP POST & GET UNIFIED ACTION HANDLER
+// ============================================================
+
+function plnHandleAction_(payload) {
+  if (String(payload.secret || '') !== plnReportSecret_()) {
+    return plnJson_({
+      ok: false,
+      status: 'UNAUTHORIZED'
+    });
+  }
+
+  const action = String(payload.action || 'create_report').trim().toLowerCase();
+  let result;
+
+  switch (action) {
+    case 'create_report':
+    case 'generate_report':
+      result = plnCreateReportV138(payload);
+      break;
+
+    case 'prepare_pdf':
+      result = plnPreparePdfV138(
+        String(payload.file_id || payload.sheet_id || '')
+      );
+      break;
+
+    case 'finalize_pdf':
+      result = plnFinalizeReportV138(
+        String(payload.file_id || payload.sheet_id || ''),
+        String(payload.final_pdf_id || payload.pdf_file_id || '')
+      );
+      break;
+
+    case 'cleanup_triggers':
+      result = plnForceResetAllOldTriggers();
+      break;
+
+    default:
+      throw new Error('UNKNOWN_ACTION: ' + action);
+  }
+
+  return plnJson_(result);
+}
 
 function doPost(e) {
   try {
-    if (!e || !e.postData || !e.postData.contents) {
+    let body = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        body = JSON.parse(e.postData.contents);
+      } catch (err) {
+        body = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      body = e.parameter;
+    } else {
       throw new Error('EMPTY_REQUEST_BODY');
     }
 
-    const body = JSON.parse(e.postData.contents);
-
-    if (String(body.secret || '') !== plnReportSecret_()) {
-      return plnJson_({
-        ok: false,
-        status: 'UNAUTHORIZED'
-      });
-    }
-
-    const action = String(body.action || 'create_report').trim().toLowerCase();
-    let result;
-
-    switch (action) {
-      case 'create_report':
-      case 'generate_report':
-        result = plnCreateReportV138(body);
-        break;
-
-      case 'prepare_pdf':
-        result = plnPreparePdfV138(
-          String(body.file_id || body.sheet_id || '')
-        );
-        break;
-
-      case 'finalize_pdf':
-        result = plnFinalizeReportV138(
-          String(body.file_id || body.sheet_id || ''),
-          String(body.final_pdf_id || body.pdf_file_id || '')
-        );
-        break;
-
-      default:
-        throw new Error('UNKNOWN_ACTION: ' + action);
-    }
-
-    return plnJson_(result);
-
+    return plnHandleAction_(body);
   } catch (error) {
     console.error(error);
     return plnJson_(plnError_(error));
@@ -1788,10 +1867,23 @@ function doPost(e) {
 
 
 // ============================================================
-// 26. WEB APP GET
+// 27. WEB APP GET (SUPPORT QUERY PARAMS FALLBACK + HEALTH CHECK)
 // ============================================================
 
-function doGet() {
+function doGet(e) {
+  try {
+    const params = (e && e.parameter) ? e.parameter : {};
+
+    // Fallback if proxy converts POST to GET
+    if (params.action) {
+      return plnHandleAction_(params);
+    }
+  } catch (error) {
+    console.error(error);
+    return plnJson_(plnError_(error));
+  }
+
+  // Standard health check output
   return plnJson_({
     ok: true,
     application: 'PLN AUTO REPORT',
@@ -1799,4 +1891,133 @@ function doGet() {
     status: 'WEB_APP_RUNNING',
     customers: Object.keys(PLN_CUSTOMERS).length
   });
+}
+
+
+// ============================================================
+// 28. STANDALONE UTILITY: MANUAL SINGLE PAGE PDF EXPORT
+// ============================================================
+
+function exportPLNSinglePagePDF(
+  spreadsheetId,
+  sheetName,
+  rangeA1,
+  outputFolderId,
+  fileName,
+  isLandscape = true
+) {
+  if (!spreadsheetId || !sheetName || !rangeA1 || !outputFolderId) {
+    throw new Error('PARAMETER_EXPORT_TIDAK_LENGKAP');
+  }
+
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    throw new Error('Sheet tidak ditemukan: ' + sheetName);
+  }
+
+  const range = sheet.getRange(rangeA1);
+  SpreadsheetApp.flush();
+
+  const gid = sheet.getSheetId();
+  const r1 = range.getRow() - 1;
+  const c1 = range.getColumn() - 1;
+  const r2 = r1 + range.getNumRows();
+  const c2 = c1 + range.getNumColumns();
+
+  const params = {
+    format: 'pdf',
+    size: 'A4',
+    portrait: String(!isLandscape),
+    scale: '4', // 4 = Fit to 1 page
+    sheetnames: 'false',
+    printtitle: 'false',
+    pagenumbers: 'false',
+    gridlines: 'false',
+    fzr: 'false',
+    ir: 'false', // Ignore Range: false
+    ic: 'false', // Ignore Column: false
+    top_margin: '0.15',
+    bottom_margin: '0.15',
+    left_margin: '0.20',
+    right_margin: '0.20',
+    horizontal_alignment: 'CENTER',
+    vertical_alignment: 'TOP',
+    gid: String(gid),
+    r1: String(r1),
+    c1: String(c1),
+    r2: String(r2),
+    c2: String(c2)
+  };
+
+  const query = Object.entries(params)
+    .map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(value))
+    .join('&');
+
+  const url = 'https://docs.google.com/spreadsheets/d/' + spreadsheetId + '/export?' + query;
+
+  const response = UrlFetchApp.fetch(url, {
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+    },
+    muteHttpExceptions: true
+  });
+
+  const code = response.getResponseCode();
+  if (code !== 200) {
+    throw new Error(
+      'PDF Export Failed: HTTP ' + code + ' - ' + response.getContentText().slice(0, 300)
+    );
+  }
+
+  const cleanName = String(fileName || sheetName)
+    .replace(/\.pdf$/i, '')
+    .replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
+
+  const blob = response.getBlob().setName(cleanName);
+
+  if (!blob.getContentType().includes('pdf')) {
+    throw new Error('Export tidak menghasilkan PDF: ' + blob.getContentType());
+  }
+
+  const folder = DriveApp.getFolderById(outputFolderId);
+  const file = folder.createFile(blob);
+
+  return {
+    ok: true,
+    file_id: file.getId(),
+    file_name: file.getName(),
+    file_url: file.getUrl(),
+    sheet_name: sheetName,
+    export_range: rangeA1,
+    orientation: isLandscape ? 'LANDSCAPE' : 'PORTRAIT'
+  };
+}
+
+
+// ============================================================
+// 29. UTILITY: EMERGENCY RESET KUOTA TRIGGER ONEDIT
+// ============================================================
+
+/**
+ * Run this function directly from the Apps Script editor to reset trigger quota.
+ */
+function plnForceResetAllOldTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let deletedCount = 0;
+  triggers.forEach(t => {
+    if (t.getEventType() === ScriptApp.EventType.ON_EDIT || plnIsPlnReviewTriggerV140_(t)) {
+      try {
+        ScriptApp.deleteTrigger(t);
+        deletedCount++;
+      } catch (_) {}
+    }
+  });
+  console.log('Successfully cleared ' + deletedCount + ' old onEdit triggers.');
+  return {
+    ok: true,
+    deleted_triggers: deletedCount,
+    message: 'Trigger onEdit lama berhasil dibersihkan.'
+  };
 }

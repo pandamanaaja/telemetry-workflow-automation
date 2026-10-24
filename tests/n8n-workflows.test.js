@@ -11,7 +11,8 @@ describe('n8n Workflow Structure & Integrity Validation', () => {
     '03-cleaning-report-generator.json',
     '04-pln-bill-ocr-extractor.json',
     '05-pln-gemini-ocr-sheet-builder.json',
-    '06-pln-finalize-pdf-cloudconvert.json'
+    '06-pln-finalize-pdf-cloudconvert.json',
+    '07-pln-finalize-pdf-local-pdflib.json'
   ];
 
   workflowFiles.forEach(fileName => {

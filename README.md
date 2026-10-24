@@ -2,11 +2,11 @@
 
 [![Platform](https://img.shields.io/badge/Platform-n8n%20%7C%20Google%20Apps%20Script-FF6D5A?style=for-the-badge&logo=n8n)](https://n8n.io/)
 [![Google Workspace](https://img.shields.io/badge/Google%20Workspace-Sheets%20%7C%20Docs%20%7C%20Drive-4285F4?style=for-the-badge&logo=google)](https://workspace.google.com/)
-[![OCR Engine](https://img.shields.io/badge/Computer%20Vision-OCR.space%20%2B%20Heuristics-28a745?style=for-the-badge)](https://ocr.space/)
+[![OCR Engine](https://img.shields.io/badge/Computer%20Vision-OCR.space%20%2B%20Gemini%20Flash-28a745?style=for-the-badge)](https://ai.google.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![CI Testing](https://github.com/pandamanaaja/telemetry-workflow-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/pandamanaaja/telemetry-workflow-automation/actions/workflows/ci.yml)
 
-Production-tested, enterprise-grade workflow automation for **industrial transmitter telemetry ingestion**, **field maintenance report generation**, **large-scale anomaly detection**, and **automated data retention pipelines**.
+Production-tested, enterprise-grade workflow automation for **industrial transmitter telemetry ingestion**, **field maintenance report generation**, **large-scale anomaly detection**, **multimodal utility billing OCR**, and **automated data retention pipelines**.
 
 ---
 
@@ -17,6 +17,7 @@ flowchart TD
     subgraph Ingestion["1. Ingestion Layer"]
         A1[Google Forms: Status & Photos] -->|Trigger onFormSubmit| B1[GAS Webhook Dispatcher]
         A2[Daily Operations Data] -->|Scheduled Trigger| B2[GAS Batch Exporter]
+        A3[PLN Billing Invoices] -->|Multi-PDF Upload| B3[GAS Multi-Customer Router]
     end
 
     subgraph Processing["2. Orchestration & Vision (n8n Engine)"]
@@ -27,6 +28,8 @@ flowchart TD
         C3 -->|Fallback| C5[Engine 1: Token Heuristic Parser]
         C4 --> C6[Accuracy Scorer & Metric Resolver]
         C5 --> C6
+        B3 -->|Gemini Vision OCR| C7[11-Field Billing Extractor]
+        C7 -->|In-Process pdf-lib / CloudConvert| C8[3-PDF Merged Executive Package]
     end
 
     subgraph Output["3. Storage & Distribution Layer"]
@@ -35,6 +38,8 @@ flowchart TD
         D2 -->|PDF Blob| D3[Google Drive Archive]
         B2 -->|Values-Only Export| D4[Standalone XLSX Multi-Folder]
         D1 -->|Statistical Z-Score Scan| D5[In-Memory Retention & Backup Engine]
+        C8 -->|Customer Routing| D6[Dedicated Customer Drive Folders]
+        C8 -->|Duplication| D7[Master All-PDFs Archive]
     end
 ```
 
@@ -58,13 +63,15 @@ flowchart TD
 * **Smart Adaptive Image Layout**: Calculates the number of uploaded site documentation photos and dynamically resizes image bounding boxes (`magnitude: PT`) to guarantee clean, unclipped table cells in the exported PDF.
 * Exports evaluated PDF blobs to designated Google Drive distribution folders and posts confirmation payloads back to the caller.
 
-### 3. ⚡ Multi-Customer PLN Billing OCR, 3-Month Comparison & CloudConvert PDF Merger
+### 3. ⚡ Multi-Customer PLN Billing Pipeline (Gemini OCR, v14.8 Auto Report & Local pdf-lib Merger)
 * **Sequential Gemini Multimodal OCR & Sheet Builder (`n8n-workflows/05-pln-gemini-ocr-sheet-builder.json`)**:
-  * Extracts 11 strict billing fields (`LWBP`, `WBP`, `kVArh`, due period, and total payable) per uploaded invoice PDF, validates technician attribution, and triggers automated multi-sheet report creation.
-* **Manual Review Gate & Synchronous 3-PDF Merger (`n8n-workflows/06-pln-finalize-pdf-cloudconvert.json`)**:
-  * Triggered upon checkbox approval in `CONTROL!B8`, exports Portrait `TN` and Landscape `PERBANDINGAN` single-page PDFs via direct `gid` range bounds, merges them with the original PLN invoice via CloudConvert (`sync.api.cloudconvert.com`), and cleans up temporary Drive artifacts automatically.
-* **PLN Auto Report Engine v14.5 (`apps-script/02-report-generators/pln_auto_report_v14_engine.js`)**:
-  * Single-read cached OCR bank lookup, batched 3-month comparison table writes, Roman numeral document numbering, and deadlock-free `onEdit` review triggers.
+  * Extracts 11 strict billing fields (`LWBP`, `WBP`, `kVArh`, due period, and total payable) per uploaded invoice PDF. Implements robust item-linking (`meta = $('Download PDF').item.json || ...`) and error-tolerant batching so single PDF anomalies do not interrupt subsequent batch items.
+* **Zero-Dependency Local `pdf-lib` 3-PDF Merger (`n8n-workflows/07-pln-finalize-pdf-local-pdflib.json`)**:
+  * High-performance, in-process PDF merging using `pdf-lib` inside n8n. Eliminates third-party API dependencies/costs, extracts single-page sheets to purge instruction sections, concatenates `TN` (portrait), `PERBANDINGAN` (landscape), and the source invoice, and records finalization.
+* **CloudConvert Synchronous 3-PDF Merger (`n8n-workflows/06-pln-finalize-pdf-cloudconvert.json`)**:
+  * Alternative cloud API merge variant for deployments without local binary or node module execution permissions.
+* **PLN Auto Report Engine v14.8 (`apps-script/02-report-generators/pln_auto_report_v14_engine.js`)**:
+  * Multi-folder routing directly into dedicated customer Drive directories, centralized duplicate archiving into a master PDF folder (`ALL_PDFS_FOLDER_ID`), single-page strict GID range export (`scale: 4`, ignore range/column false), in-memory batch writes, and deadlock-free `onEdit` review triggers with emergency quota reset handlers.
 
 ### 4. 📊 High-Performance Data Processing & Anomaly Scanner (`apps-script/`)
 * **Statistical Outlier Detection (`01-master-metering/anomaly_detection.js`)**:
@@ -93,8 +100,9 @@ telemetry-workflow-automation/
 │   ├── 02-site-visit-report-autocrat.json      # Dynamic Docs-to-PDF report generator
 │   ├── 03-cleaning-report-generator.json       # Maintenance report & callback synchronizer
 │   ├── 04-pln-bill-ocr-extractor.json          # Multimodal PLN billing OCR & auto-recap workflow
-│   ├── 05-pln-gemini-ocr-sheet-builder.json    # Multi-customer PLN Gemini OCR & auto report sheet builder
-│   └── 06-pln-finalize-pdf-cloudconvert.json   # PLN manual review approval & CloudConvert 3-PDF merger
+│   ├── 05-pln-gemini-ocr-sheet-builder.json    # Multi-customer PLN Gemini OCR & auto report sheet builder (v14.3)
+│   ├── 06-pln-finalize-pdf-cloudconvert.json   # PLN manual review approval & CloudConvert 3-PDF merger (v13.9)
+│   └── 07-pln-finalize-pdf-local-pdflib.json   # PLN manual review approval & Local pdf-lib 3-PDF merger (v14.6)
 │
 └── apps-script/
     ├── 01-master-metering/
@@ -104,7 +112,7 @@ telemetry-workflow-automation/
     │   ├── xlsx_multi_sheet_exporter.js        # Scheduled daily/weekly/monthly XLSX exporter
     │   ├── baseline_pdf_generator.js           # Incremental pointer-based PDF report generator
     │   ├── pln_billing_report_builder.js       # Automated PLN billing executive report builder
-    │   ├── pln_auto_report_v14_engine.js       # Multi-customer PLN auto report & 3-month comparison engine
+    │   ├── pln_auto_report_v14_engine.js       # Multi-customer PLN auto report v14.8 (multi-folder & master archive)
     │   └── pln_single_page_pdf_exporter.js     # Single-page A4 Portrait/Landscape GID PDF exporter
     ├── 03-data-deduplication/
     │   ├── duplicate_processor.js              # Composite-key deduplication processor
@@ -134,9 +142,11 @@ telemetry-workflow-automation/
    * **Google Drive OAuth2**
    * **Google Docs OAuth2**
    * **Google Sheets OAuth2**
+   * **Google Gemini API**
 4. Update placeholder values:
    * Replace `YOUR_OCR_SPACE_API_KEY` with your OCR.space API key.
    * Replace `YOUR_TELEMETRY_SPREADSHEET_ID` and `YOUR_PLN_MASTER_SPREADSHEET_ID` with your Google Sheet IDs.
+   * Replace `YOUR_PLN_REPORT_WEBHOOK_SECRET` and `YOUR_PLN_FINALIZE_TRIGGER_TOKEN` with your secure tokens.
 5. Toggle workflow to **Active**.
 
 ### 2. Installing Google Apps Script
@@ -149,4 +159,4 @@ telemetry-workflow-automation/
 ---
 
 ## 🔒 Security & Data Sanitization
-All company-specific identifiers, proprietary internal server domains, OAuth token credentials, API keys, and employee personal data have been sanitized with generic placeholders (`YOUR_*`) for public portfolio demonstration.
+All company-specific identifiers, proprietary internal server domains, OAuth token credentials, API keys, customer names, and employee personal data have been sanitized with generic placeholders (`YOUR_*`) for public portfolio demonstration.

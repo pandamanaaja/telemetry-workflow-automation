@@ -1,0 +1,277 @@
+{
+  "name": "07 - PLN Finalize PDF - Local pdf-lib Merger (v14.6)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pln-finalize-pdf-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "edd7550b-2636-4058-9d27-758482e34a7d",
+      "name": "Finalize Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        4912,
+        1312
+      ],
+      "webhookId": "pln-finalize-pdf-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json;\nconst body = input.body || input;\n\nconst EXPECTED_TOKEN =\n  'YOUR_PLN_FINALIZE_TRIGGER_TOKEN';\n\nif (String(body.token || '') !== EXPECTED_TOKEN) {\n  throw new Error('UNAUTHORIZED_FINALIZATION: Token finalisasi tidak valid');\n}\n\nlet fileId = String(body.file_id || '').trim();\n\nif (!/^[A-Za-z0-9_-]{15,}$/.test(fileId)) {\n  throw new Error('INVALID_REPORT_FILE_ID: ID spreadsheet tidak valid (' + fileId + ')');\n}\n\nreturn {\n  json: {\n    authorized: true,\n    file_id: fileId,\n    action: 'finalize_pdf'\n  }\n};"
+      },
+      "id": "847a27f7-b153-428c-ac33-8da04e561db4",
+      "name": "Verify Finalization Token1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5152,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/YOUR_APPS_SCRIPT_DEPLOYMENT_ID/exec",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  secret: 'YOUR_PLN_REPORT_WEBHOOK_SECRET',\n  action: 'prepare_pdf',\n  file_id: $json.file_id\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "a28c908e-2481-446d-93a1-5048de3db8fc",
+      "name": "Prepare Reviewed PDF1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5392,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract prepared PDF metadata from Apps Script response\nconst raw = $input.first().json || {};\nlet p = raw.body ?? raw;\n\nif (typeof p === 'string') {\n  try {\n    p = JSON.parse(p);\n  } catch (e) {\n    throw new Error('APPS_SCRIPT_NON_JSON_RESPONSE: ' + p.slice(0, 400));\n  }\n}\n\nif (p.ok !== true || p.status !== 'PREPARED') {\n  throw new Error('PREPARE_FAILED: ' + (p.error || JSON.stringify(p).slice(0, 1000)));\n}\n\nconst tnId = String(p.tn_pdf_file_id || '').trim();\nconst compId = String(p.comparison_pdf_file_id || '').trim();\nconst invoiceId = String(p.original_pdf_file_id || p.source_file_id || '').trim();\nconst folderId = String(p.output_folder_id || '').trim();\nconst reportFileId = String(p.file_id || '').trim();\n\nif (!tnId || !compId || !invoiceId || !reportFileId || !folderId) {\n  throw new Error('PDF_INPUTS_OR_METADATA_MISSING: ' + JSON.stringify(p).slice(0, 1000));\n}\n\nconst filename = String(p.final_pdf_name || 'PLN_FINAL_REPORT.pdf')\n  .replace(/\\.pdf$/i, '')\n  .replace(/[\\\\/:*?\"<>|]/g, '_') + '.pdf';\n\n// Return 3 sequential download items: TN, Comparison, Invoice\nreturn [\n  {\n    json: {\n      order: 1,\n      type: 'TN',\n      file_id: tnId,\n      report_file_id: reportFileId,\n      customer_id: p.customer_id,\n      final_pdf_name: filename,\n      output_folder_id: folderId\n    }\n  },\n  {\n    json: {\n      order: 2,\n      type: 'COMPARISON',\n      file_id: compId,\n      report_file_id: reportFileId,\n      customer_id: p.customer_id,\n      final_pdf_name: filename,\n      output_folder_id: folderId\n    }\n  },\n  {\n    json: {\n      order: 3,\n      type: 'INVOICE',\n      file_id: invoiceId,\n      report_file_id: reportFileId,\n      customer_id: p.customer_id,\n      final_pdf_name: filename,\n      output_folder_id: folderId\n    }\n  }\n];"
+      },
+      "id": "abab2504-4ba0-461b-a9d1-f2c5a1338247",
+      "name": "Prepare Download Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5632,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.file_id }}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "56423cfb-b909-4765-a7ac-58f3e9166bd1",
+      "name": "Download PDF Files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        5872,
+        1312
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let PDFDocument;\ntry {\n  const pdflib = require('pdf-lib');\n  PDFDocument = pdflib.PDFDocument;\n} catch (err) {\n  throw new Error('MODULE_PDF_LIB_NOT_FOUND: ' + err.message);\n}\n\nconst rawItems = $input.all();\nif (!rawItems || rawItems.length === 0) {\n  throw new Error('NO_PDF_ITEMS_RECEIVED');\n}\n\nif (rawItems.length !== 3) {\n  throw new Error(`Expected 3 PDFs, received ${rawItems.length} items.`);\n}\n\n// Preserve original index to prevent buffer mismatch\nconst items = rawItems.map((item, index) => ({\n  item,\n  inputIndex: index,\n  order: Number(item.json.order) || 0\n}));\n\n// 1. Sort: 1. TN, 2. COMPARISON, 3. INVOICE\nitems.sort((a, b) => a.order - b.order);\n\nconst mergedPdf = await PDFDocument.create();\n\nfor (let i = 0; i < items.length; i++) {\n  const entry = items[i];\n  const item = entry.item;\n  const itemType = String(item.json.type || '').toUpperCase();\n  const buffer = await this.helpers.getBinaryDataBuffer(entry.inputIndex, 'data');\n  \n  if (!buffer || buffer.length < 50 || buffer.subarray(0, 5).toString() !== '%PDF-') {\n    throw new Error(`INVALID_PDF_BUFFER: Document \"${itemType}\" is not a valid PDF.`);\n  }\n\n  const sourcePdf = await PDFDocument.load(buffer, { ignoreEncryption: true });\n  const indices = sourcePdf.getPageIndices();\n\n  // For TN and COMPARISON: take only page 1 (excluding instruction rows)\n  if ((itemType === 'TN' || itemType === 'COMPARISON') && indices.length > 1) {\n    indices.length = 1;\n  }\n\n  const copiedPages = await mergedPdf.copyPages(sourcePdf, indices);\n  copiedPages.forEach((page) => mergedPdf.addPage(page));\n}\n\nconst mergedPdfBytes = await mergedPdf.save();\nconst meta = items[0].item.json;\nconst finalFilename = meta.final_pdf_name || 'PLN_FINAL_REPORT.pdf';\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  Buffer.from(mergedPdfBytes),\n  finalFilename,\n  'application/pdf'\n);\n\nreturn [{\n  json: {\n    file_id: meta.report_file_id || meta.file_id,\n    customer_id: meta.customer_id,\n    final_pdf_name: finalFilename,\n    output_folder_id: meta.output_folder_id,\n    pdf_size_bytes: mergedPdfBytes.length,\n    total_pages: mergedPdf.getPageCount()\n  },\n  binary: {\n    data: binaryData\n  }\n}];"
+      },
+      "id": "6e748cd5-315d-416c-b5d3-3d3102961bfd",
+      "name": "Merge PDFs with pdf-lib",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6112,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.final_pdf_name }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.output_folder_id }}"
+        },
+        "options": {}
+      },
+      "id": "2ad964c1-a9ee-41a9-b09d-3c9c8b7063d2",
+      "name": "Upload Final Merged PDF1",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        6352,
+        1312
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive OAuth2 Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/YOUR_APPS_SCRIPT_DEPLOYMENT_ID/exec",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  secret: 'YOUR_PLN_REPORT_WEBHOOK_SECRET',\n  action: 'finalize_pdf',\n  file_id: $('Merge PDFs with pdf-lib').first().json.file_id,\n  final_pdf_id: $json.id\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "bf59a152-f30d-48a6-ad15-614482e5eb25",
+      "name": "Finalize PLN Report Log1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6592,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $input.item.json || {};\nlet r = raw.body ?? raw;\nif (typeof r === 'string') {\n  try {\n    r = JSON.parse(r);\n  } catch (e) {\n    throw new Error('FINALIZE_NON_JSON_RESPONSE: ' + r.slice(0, 300));\n  }\n}\n\nif (r.ok !== true) {\n  throw new Error('FINALIZE_FAILED: ' + JSON.stringify(r));\n}\n\nconst status = String(r.status || '').toUpperCase();\nif (!['COMPLETED', 'FINALIZED', 'ALREADY_FINALIZED'].includes(status)) {\n  throw new Error('INVALID_FINAL_STATUS: ' + status);\n}\n\nconst reportId = String(\n  r.file_id || r.sheet_id || $('Merge PDFs with pdf-lib').first().json.file_id || ''\n).trim();\nconst uploadedId = String($('Upload Final Merged PDF1').first().json.id || '').trim();\nconst finalPdfId = String(r.final_pdf_id || r.pdf_file_id || uploadedId).trim();\n\nif (!reportId || !finalPdfId) {\n  throw new Error('REPORT_OR_FINAL_PDF_ID_MISSING');\n}\n\nif (uploadedId && finalPdfId !== uploadedId) {\n  throw new Error('FINALIZED_PDF_ID_MISMATCH');\n}\n\nconst pdfUrl = String(r.pdf_url || `https://drive.google.com/file/d/${finalPdfId}/view`).trim();\nif (!/^https:\\/\\/drive\\.google\\.com\\//.test(pdfUrl)) {\n  throw new Error('INVALID_PDF_URL: ' + pdfUrl);\n}\n\nconst mergeInfo = $('Merge PDFs with pdf-lib').first().json;\n\nreturn {\n  json: {\n    ok: true,\n    status: 'COMPLETED',\n    report_status: 'COMPLETED',\n    converter: 'pdf-lib',\n    file_id: reportId,\n    final_pdf_id: finalPdfId,\n    pdf_url: pdfUrl,\n    pdf_name: mergeInfo.final_pdf_name,\n    total_pages: mergeInfo.total_pages,\n    size_bytes: mergeInfo.pdf_size_bytes,\n    message: 'PLN report successfully merged locally via pdf-lib and finalized.'\n  }\n};"
+      },
+      "id": "48077f19-6225-4a4b-ae75-92d287051751",
+      "name": "Verify Merged PDF1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6832,
+        1312
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Finalize Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Verify Finalization Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Finalization Token1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reviewed PDF1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reviewed PDF1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Download Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Download Items": {
+      "main": [
+        [
+          {
+            "node": "Download PDF Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF Files": {
+      "main": [
+        [
+          {
+            "node": "Merge PDFs with pdf-lib",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge PDFs with pdf-lib": {
+      "main": [
+        [
+          {
+            "node": "Upload Final Merged PDF1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Final Merged PDF1": {
+      "main": [
+        [
+          {
+            "node": "Finalize PLN Report Log1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize PLN Report Log1": {
+      "main": [
+        [
+          {
+            "node": "Verify Merged PDF1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "5ed7d80b-e4e9-49b8-97ba-4f622f63fcac",
+  "meta": {
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "07-pln-finalize-pdf-local-pdflib",
+  "tags": []
+}

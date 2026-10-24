@@ -7,13 +7,13 @@
         "path": "pln-gemini-ocr-upload",
         "options": {}
       },
-      "id": "a33711d9-58d6-4ceb-9669-e409b7a59fbe",
+      "id": "af82ec66-ad13-4823-8a7c-e8124dd21976",
       "name": "Receive Google Forms Files",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -2096,
-        3344
+        1792,
+        480
       ],
       "webhookId": "pln-gemini-ocr-upload"
     },
@@ -21,26 +21,26 @@
       "parameters": {
         "jsCode": "// v14.3: validate technician at ingress and carry it through the PDF loop.\nconst incoming = $input.first().json;\nconst data = incoming.body ?? incoming;\nconst normalize = v => Array.isArray(v) ? String(v[0] ?? '').trim() : String(v ?? '').trim();\nconst fields = data.namedValues ?? data.named_values ?? data.form_response ?? data;\nconst tech = normalize(data.technician || data.nama_teknisi || data['Nama Teknisi'] || data['Nama teknisi'] || data['Technician'] || fields.technician || fields.nama_teknisi || fields['Nama Teknisi'] || fields['Nama teknisi'] || fields['Technician']);\nif (!tech) throw new Error('TECHNICIAN_MISSING_AT_WEBHOOK: Google Form sender must include Nama Teknisi in webhook JSON. No fallback technician is allowed.');\nlet files = data.file_ids ?? data.files ?? [];\nif (typeof files === 'string') files = files.split(',').map(s=>s.trim()).filter(Boolean);\nif (!Array.isArray(files) || files.length===0) throw new Error('FILE_IDS_MISSING: Google Form webhook must send file_ids array');\nif (files.length>30) throw new Error('MAX_30_PDFS');\nconst seen=new Set(), out=[];\nfor(const f of files){\n  const id=normalize(typeof f==='object' ? (f.id ?? f.file_id) : f);\n  if(!/^[A-Za-z0-9_-]{10,}$/.test(id)) throw new Error('INVALID_PDF_FILE_ID: '+id);\n  if(seen.has(id)) continue;\n  seen.add(id);\n  out.push({\n    json:{\n      file_id:id,\n      file_name:typeof f==='object'?normalize(f.name):'',\n      submission_id:data.submission_id??'',\n      technician:tech,\n      enable_pdf:false\n    }\n  });\n}\nreturn out;"
       },
-      "id": "d3752af1-f452-42de-860f-3450efbea9fe",
+      "id": "e3753be5-4e24-4a20-bfff-1276ca1cce32",
       "name": "Split PDF IDs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1808,
-        3344
+        2000,
+        480
       ]
     },
     {
       "parameters": {
         "options": {}
       },
-      "id": "e55b6101-c7a6-4947-9f78-1de3875620e1",
+      "id": "529dc4ee-37aa-4588-95cd-3b3b5c571619",
       "name": "Process PDFs Sequentially",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        -1520,
-        3344
+        2208,
+        480
       ],
       "notesInFlow": true,
       "notes": "Batch size 1; setiap PDF diproses sampai selesai sebelum PDF berikutnya."
@@ -57,13 +57,13 @@
           "binaryPropertyName": "data"
         }
       },
-      "id": "e3a4d72c-4715-470e-b3b9-b91600981b08",
+      "id": "f1f41833-2e74-4d0d-9445-3503cb06ce3a",
       "name": "Download PDF",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        -1280,
-        3360
+        2416,
+        496
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -89,13 +89,13 @@
           "maxOutputTokens": 1800
         }
       },
-      "id": "898b731c-88f7-43e7-b8ac-2d7267e9b862",
+      "id": "0caab845-2ec6-4c82-939b-33deea21e038",
       "name": "Gemini Extract PLN",
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1,
       "position": [
-        -1120,
-        3360
+        2624,
+        496
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -110,15 +110,15 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Parse Gemini Analyze Document output in several n8n response shapes.\n// Keep invalid/ambiguous OCR OUT of the permanent Google Sheets database.\nconst source = $input.item.json || {};\nconst keys = [\n  'id_pelanggan', 'nama_pelanggan', 'jatuh_tempo_bulan',\n  'jatuh_tempo_tahun', 'total_harus_dibayar',\n  'stand_akhir_lwbp', 'stand_akhir_wbp',\n  'stand_awal_lwbp', 'stand_awal_wbp',\n  'stand_akhir_kvarh', 'stand_awal_kvarh'\n];\nconst targetKeys = new Set(keys);\nconst candidates = [];\nconst examined = new WeakSet();\nconst issues = [];\nconst priority = [\n  'text', 'output', 'response', 'result', 'content', 'parts',\n  'data', 'candidates', 'message', 'generations', 'choices', 'json'\n];\n\nfunction parseEmbeddedJson(text) {\n  if (typeof text !== 'string') return null;\n  let clean = text.trim();\n  if (clean.startsWith('```')) {\n    clean = clean.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/, '').trim();\n  }\n  try { return JSON.parse(clean); } catch (e) { /* allow surrounding text */ }\n  const start = clean.indexOf('{');\n  if (start < 0) return null;\n  let depth = 0, quoted = false, slash = false;\n  for (let i = start; i < clean.length; i++) {\n    const ch = clean[i];\n    if (quoted) {\n      if (slash) slash = false;\n      else if (ch === '\\\\') slash = true;\n      else if (ch === '\"') quoted = false;\n      continue;\n    }\n    if (ch === '\"') quoted = true;\n    else if (ch === '{') depth++;\n    else if (ch === '}' && --depth === 0) {\n      try { return JSON.parse(clean.slice(start, i + 1)); }\n      catch (e) { return null; }\n    }\n  }\n  return null;\n}\n\nfunction explore(node, path, depth) {\n  if (depth > 10 || node === null || node === undefined) return;\n  if (typeof node === 'string') {\n    const parsed = parseEmbeddedJson(node);\n    if (parsed !== null) explore(parsed, path + ' [JSON text]', depth + 1);\n    return;\n  }\n  if (typeof node !== 'object') return;\n  if (examined.has(node)) return;\n  examined.add(node);\n  if (Array.isArray(node)) {\n    for (let i = 0; i < Math.min(node.length, 20); i++) explore(node[i], `${path}[${i}]`, depth + 1);\n    return;\n  }\n  const matches = keys.filter(k => Object.prototype.hasOwnProperty.call(node, k));\n  if (matches.length) candidates.push({ data: node, path, matched: matches.length });\n  for (const key of priority) {\n    if (Object.prototype.hasOwnProperty.call(node, key)) explore(node[key], `${path}.${key}`, depth + 1);\n  }\n  for (const [key, value] of Object.entries(node)) {\n    if (!priority.includes(key) && !targetKeys.has(key) && typeof value === 'object') {\n      explore(value, `${path}.${key}`, depth + 1);\n    }\n  }\n}\n\nexplore(source, '$json', 0);\ncandidates.sort((a, b) => b.matched - a.matched);\nconst best = candidates[0] || null;\nconst extracted = best ? best.data : {};\nconst rec = {};\nfor (const k of keys) rec[k] = Object.prototype.hasOwnProperty.call(extracted, k) ? extracted[k] : null;\n\nif (!best) issues.push('Gemini response did not contain recognizable OCR JSON fields');\nfor (const k of keys) {\n  if (rec[k] === null || rec[k] === undefined || rec[k] === '') issues.push('Missing ' + k);\n}\n\nif (rec.id_pelanggan !== null) rec.id_pelanggan = String(rec.id_pelanggan).replace(/\\s+/g, '');\nif (rec.nama_pelanggan !== null) rec.nama_pelanggan = String(rec.nama_pelanggan).trim();\nif (rec.jatuh_tempo_bulan !== null) rec.jatuh_tempo_bulan = String(rec.jatuh_tempo_bulan).trim();\nif (rec.jatuh_tempo_tahun !== null) rec.jatuh_tempo_tahun = Number(rec.jatuh_tempo_tahun);\nif (rec.total_harus_dibayar !== null) {\n  const cleanTotal = String(rec.total_harus_dibayar).replace(/[^\\d-]/g, '');\n  rec.total_harus_dibayar = cleanTotal ? Number(cleanTotal) : NaN;\n}\nfor (const k of keys.filter(k => k.startsWith('stand_'))) {\n  if (rec[k] !== null) rec[k] = String(rec[k]).trim();\n}\n\nif (rec.id_pelanggan !== null && !/^\\d{10,13}$/.test(rec.id_pelanggan)) issues.push('Invalid customer ID');\nif (rec.nama_pelanggan !== null && !rec.nama_pelanggan) issues.push('Missing customer name');\nif (rec.jatuh_tempo_tahun !== null && (!Number.isInteger(rec.jatuh_tempo_tahun) || rec.jatuh_tempo_tahun < 2000 || rec.jatuh_tempo_tahun > 2100)) {\n  issues.push('Invalid due year');\n}\nif (rec.total_harus_dibayar !== null && (!Number.isSafeInteger(rec.total_harus_dibayar) || rec.total_harus_dibayar < 0)) {\n  issues.push('Invalid total payable');\n}\n\nconst months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\nconst alias = {jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,may:5,mei:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,agu:8,sep:9,sept:9,oct:10,okt:10,nov:11,dec:12,des:12};\nif (rec.jatuh_tempo_bulan !== null) {\n  const raw = String(rec.jatuh_tempo_bulan).trim().toLowerCase();\n  const index = /^\\d{1,2}$/.test(raw) ? Number(raw) : months.findIndex(m => m.toLowerCase() === raw) + 1 || alias[raw];\n  if (!Number.isInteger(index) || index < 1 || index > 12) issues.push('Invalid due month');\n  else rec.jatuh_tempo_bulan = months[index - 1];\n}\n\nfor (const k of keys.filter(k => k.startsWith('stand_'))) {\n  if (rec[k] !== null && !/^\\d+(\\.\\d+)?$/.test(rec[k])) issues.push('Invalid meter reading ' + k);\n}\n\nlet meta = {};\ntry {\n  meta = $('Process PDFs Sequentially').first().json || {};\n} catch (e) {\n  issues.push('Unable to link source PDF metadata');\n}\n\nreturn {\n  json: {\n    processed_at: new Date().toISOString(),\n    file_id: meta.file_id || null,\n    file_name: meta.file_name || null,\n    submission_id: meta.submission_id || null,\n    technician: meta.technician || null,\n    ocr_status: issues.length ? 'NEEDS_REVIEW' : 'VALID',\n    ...rec,\n    validation_errors: issues,\n    ocr_debug: {\n      gemini_output_keys: Object.keys(source),\n      matched_field_count: best?.matched || 0,\n      parsed_from: best?.path || null\n    }\n  }\n};"
+        "jsCode": "// Parse Gemini Analyze Document output in several n8n response shapes.\n// Keep invalid/ambiguous OCR OUT of the permanent Google Sheets database.\nconst source = $input.item.json || {};\nconst keys = [\n  'id_pelanggan', 'nama_pelanggan', 'jatuh_tempo_bulan',\n  'jatuh_tempo_tahun', 'total_harus_dibayar',\n  'stand_akhir_lwbp', 'stand_akhir_wbp',\n  'stand_awal_lwbp', 'stand_awal_wbp',\n  'stand_akhir_kvarh', 'stand_awal_kvarh'\n];\nconst targetKeys = new Set(keys);\nconst candidates = [];\nconst examined = new WeakSet();\nconst issues = [];\nconst priority = [\n  'text', 'output', 'response', 'result', 'content', 'parts',\n  'data', 'candidates', 'message', 'generations', 'choices', 'json'\n];\n\nfunction parseEmbeddedJson(text) {\n  if (typeof text !== 'string') return null;\n  let clean = text.trim();\n  if (clean.startsWith('```')) {\n    clean = clean.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/, '').trim();\n  }\n  try { return JSON.parse(clean); } catch (e) { /* allow surrounding text */ }\n  const start = clean.indexOf('{');\n  if (start < 0) return null;\n  let depth = 0, quoted = false, slash = false;\n  for (let i = start; i < clean.length; i++) {\n    const ch = clean[i];\n    if (quoted) {\n      if (slash) slash = false;\n      else if (ch === '\\\\') slash = true;\n      else if (ch === '\"') quoted = false;\n      continue;\n    }\n    if (ch === '\"') quoted = true;\n    else if (ch === '{') depth++;\n    else if (ch === '}' && --depth === 0) {\n      try { return JSON.parse(clean.slice(start, i + 1)); }\n      catch (e) { return null; }\n    }\n  }\n  return null;\n}\n\nfunction explore(node, path, depth) {\n  if (depth > 10 || node === null || node === undefined) return;\n  if (typeof node === 'string') {\n    const parsed = parseEmbeddedJson(node);\n    if (parsed !== null) explore(parsed, path + ' [JSON text]', depth + 1);\n    return;\n  }\n  if (typeof node !== 'object') return;\n  if (examined.has(node)) return;\n  examined.add(node);\n  if (Array.isArray(node)) {\n    for (let i = 0; i < Math.min(node.length, 20); i++) explore(node[i], `${path}[${i}]`, depth + 1);\n    return;\n  }\n  const matches = keys.filter(k => Object.prototype.hasOwnProperty.call(node, k));\n  if (matches.length) candidates.push({ data: node, path, matched: matches.length });\n  for (const key of priority) {\n    if (Object.prototype.hasOwnProperty.call(node, key)) explore(node[key], `${path}.${key}`, depth + 1);\n  }\n  for (const [key, value] of Object.entries(node)) {\n    if (!priority.includes(key) && !targetKeys.has(key) && typeof value === 'object') {\n      explore(value, `${path}.${key}`, depth + 1);\n    }\n  }\n}\n\nexplore(source, '$json', 0);\ncandidates.sort((a, b) => b.matched - a.matched);\nconst best = candidates[0] || null;\nconst extracted = best ? best.data : {};\nconst rec = {};\nfor (const k of keys) rec[k] = Object.prototype.hasOwnProperty.call(extracted, k) ? extracted[k] : null;\n\nif (!best) issues.push('Gemini response did not contain recognizable OCR JSON fields');\nfor (const k of keys) {\n  if (rec[k] === null || rec[k] === undefined || rec[k] === '') issues.push('Missing ' + k);\n}\n\nif (rec.id_pelanggan !== null) rec.id_pelanggan = String(rec.id_pelanggan).replace(/\\s+/g, '');\nif (rec.nama_pelanggan !== null) rec.nama_pelanggan = String(rec.nama_pelanggan).trim();\nif (rec.jatuh_tempo_bulan !== null) rec.jatuh_tempo_bulan = String(rec.jatuh_tempo_bulan).trim();\nif (rec.jatuh_tempo_tahun !== null) rec.jatuh_tempo_tahun = Number(rec.jatuh_tempo_tahun);\nif (rec.total_harus_dibayar !== null) {\n  const cleanTotal = String(rec.total_harus_dibayar).replace(/[^\\d-]/g, '');\n  rec.total_harus_dibayar = cleanTotal ? Number(cleanTotal) : NaN;\n}\nfor (const k of keys.filter(k => k.startsWith('stand_'))) {\n  if (rec[k] !== null) rec[k] = String(rec[k]).trim();\n}\n\nif (rec.id_pelanggan !== null && !/^\\d{10,13}$/.test(rec.id_pelanggan)) issues.push('Invalid customer ID');\nif (rec.nama_pelanggan !== null && !rec.nama_pelanggan) issues.push('Missing customer name');\nif (rec.jatuh_tempo_tahun !== null && (!Number.isInteger(rec.jatuh_tempo_tahun) || rec.jatuh_tempo_tahun < 2000 || rec.jatuh_tempo_tahun > 2100)) {\n  issues.push('Invalid due year');\n}\nif (rec.total_harus_dibayar !== null && (!Number.isSafeInteger(rec.total_harus_dibayar) || rec.total_harus_dibayar < 0)) {\n  issues.push('Invalid total payable');\n}\n\nconst months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\nconst alias = {jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,may:5,mei:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,agu:8,sep:9,sept:9,oct:10,okt:10,nov:11,dec:12,des:12};\nif (rec.jatuh_tempo_bulan !== null) {\n  const raw = String(rec.jatuh_tempo_bulan).trim().toLowerCase();\n  const index = /^\\d{1,2}$/.test(raw) ? Number(raw) : months.findIndex(m => m.toLowerCase() === raw) + 1 || alias[raw];\n  if (!Number.isInteger(index) || index < 1 || index > 12) issues.push('Invalid due month');\n  else rec.jatuh_tempo_bulan = months[index - 1];\n}\n\nfor (const k of keys.filter(k => k.startsWith('stand_'))) {\n  if (rec[k] !== null && !/^\\d+(\\.\\d+)?$/.test(rec[k])) issues.push('Invalid meter reading ' + k);\n}\n\nlet meta = {};\ntry {\n  // Gunakan item-linking agar aman untuk multi-PDF (tidak stuck di file pertama)\n  meta = $('Download PDF').item.json || $('Process PDFs Sequentially').item.json || {};\n} catch (e) {\n  issues.push('Unable to link source PDF metadata');\n}\n\nreturn {\n  json: {\n    processed_at: new Date().toISOString(),\n    file_id: meta.file_id || null,\n    file_name: meta.file_name || null,\n    submission_id: meta.submission_id || null,\n    technician: meta.technician || null,\n    ocr_status: issues.length ? 'NEEDS_REVIEW' : 'VALID',\n    ...rec,\n    validation_errors: issues,\n    ocr_debug: {\n      gemini_output_keys: Object.keys(source),\n      matched_field_count: best?.matched || 0,\n      parsed_from: best?.path || null\n    }\n  }\n};"
       },
-      "id": "35d16d39-8b36-4123-81e0-139165483a6a",
+      "id": "797c4e72-2b38-42b8-96b8-beffbf1518b3",
       "name": "Validate 11 Fields",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -928,
-        3360
+        2832,
+        496
       ]
     },
     {
@@ -145,13 +145,13 @@
         },
         "options": {}
       },
-      "id": "f6a30b37-edcf-42d1-ba11-423c84181522",
+      "id": "479b087f-92a6-4310-8db2-7b37634895b7",
       "name": "Only Valid OCR",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -736,
-        3360
+        3008,
+        496
       ]
     },
     {
@@ -321,13 +321,13 @@
           "cellFormat": "RAW"
         }
       },
-      "id": "8186875d-43f6-45c5-a824-fb184d381c45",
+      "id": "338a0003-bb95-49ca-9530-e2b1cdde7154",
       "name": "Append OCR to Form Spreadsheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        -528,
-        3344
+        3248,
+        480
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -355,17 +355,17 @@
           "timeout": 120000
         }
       },
-      "id": "119cdbe0-78df-4b37-8928-cd09d52eb78f",
+      "id": "5dc37240-dcfc-402a-91f6-dff4207106e9",
       "name": "Generate PLN Report Auto Template",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -320,
-        3344
+        3440,
+        480
       ],
       "retryOnFail": false,
-      "onError": "continueRegularOutput",
       "notesInFlow": true,
+      "onError": "continueRegularOutput",
       "notes": "v14.3: Mengambil technician langsung dari Validate 11 Fields. Jika Apps Script gagal di 1 PDF, batch tetap lanjut ke PDF berikutnya."
     },
     {
@@ -373,13 +373,13 @@
         "mode": "runOnceForEachItem",
         "jsCode": "const raw = $input.item.json || {};\nlet body = raw;\nif (typeof raw.body === 'string') {\n  try { body = JSON.parse(raw.body); } catch (e) { body = { ok: false, error: 'NON_JSON_RESPONSE', raw: raw.body.slice(0, 500) }; }\n} else if (raw.body && typeof raw.body === 'object') {\n  body = raw.body;\n}\n\nconst validStatuses = ['PENDING_REVIEW', 'WAITING_HISTORY'];\nconst isSheetUrlValid = /^https:\\/\\/docs\\.google\\.com\\/spreadsheets\\/d\\//.test(body.sheet_url || '');\n\nif (body.ok !== true || !validStatuses.includes(body.status) || !body.sheet_id || !isSheetUrlValid) {\n  return {\n    json: {\n      ok: false,\n      report_status: 'REPORT_CREATION_FAILED',\n      file_id: $('Validate 11 Fields').item.json.file_id,\n      customer_id: $('Validate 11 Fields').item.json.id_pelanggan,\n      technician: $('Validate 11 Fields').item.json.technician,\n      error_detail: JSON.stringify(body).slice(0, 1000)\n    }\n  };\n}\n\nreturn {\n  json: {\n    ok: true,\n    report_status: body.status,\n    file_id: body.file_id,\n    google_sheet_url: body.sheet_url,\n    customer_name: body.customer_name,\n    technician: body.technician,\n    comparison_ready: body.comparison_ready,\n    missing_periods: body.missing_periods || [],\n    warnings: body.warnings || [],\n    pdf_status: body.status === 'PENDING_REVIEW' ? 'WAITING_MANUAL_APPROVAL' : 'WAITING_HISTORY',\n    message: 'Google Sheets created: ' + body.sheet_url\n  }\n};"
       },
-      "id": "d936d6bd-1bdf-40fb-b1ec-7cc0a57e2e43",
+      "id": "f89e17c6-ceba-4c62-b701-02989abd76f7",
       "name": "Verify PLN Report Links",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -128,
-        3344
+        3632,
+        480
       ],
       "notesInFlow": true,
       "notes": "v14.3: Tidak menghentikan sisa antrean PDF jika 1 laporan gagal dibuat."
@@ -389,13 +389,13 @@
         "mode": "runOnceForEachItem",
         "jsCode": "const item = $input.item.json || {};\nreturn {\n  json: {\n    processed_at: item.processed_at,\n    file_id: item.file_id,\n    file_name: item.file_name,\n    submission_id: item.submission_id,\n    technician: item.technician,\n    ocr_status: item.ocr_status,\n    validation_errors: (item.validation_errors || []).join('; '),\n    raw_extracted: {\n      id_pelanggan: item.id_pelanggan,\n      nama_pelanggan: item.nama_pelanggan,\n      jatuh_tempo_bulan: item.jatuh_tempo_bulan,\n      jatuh_tempo_tahun: item.jatuh_tempo_tahun,\n      total_harus_dibayar: item.total_harus_dibayar\n    }\n  }\n};"
       },
-      "id": "1652a5e7-ec72-426b-84a7-5052b2122200",
+      "id": "1ea0ae5e-20eb-4a28-b657-d5ebe4ab893c",
       "name": "Log OCR Needs Review",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -512,
-        3568
+        3264,
+        688
       ],
       "notesInFlow": true,
       "notes": "Menampung PDF yang gagal validasi 11 field agar mudah dicek atau dihubungkan ke notifikasi/Sheet Review."
@@ -404,16 +404,16 @@
       "parameters": {
         "amount": 3
       },
-      "id": "79948c06-15f7-41e8-a24d-956a32cb48c5",
+      "id": "45636b53-1bcc-4532-9e72-126581c46408",
       "name": "Pause Before Next PDF",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -112,
-        3568
+        3632,
+        688
       ],
       "notesInFlow": true,
-      "webhookId": "eb5a4629-02db-45ea-a81c-b1727da26a52",
+      "webhookId": "pln-ocr-pause-wait-webhook",
       "notes": "Jeda 3 detik setelah laporan atau review, sebelum melanjutkan PDF berikutnya."
     }
   ],
@@ -560,10 +560,17 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": false
-  }
+  },
+  "versionId": "31de76eb-d04d-41ce-af7f-dd08fdbe404f",
+  "meta": {
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "05-pln-gemini-ocr-sheet-builder",
+  "tags": []
 }
