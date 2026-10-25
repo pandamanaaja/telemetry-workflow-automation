@@ -79,7 +79,7 @@ flowchart TD
   * **Deadlock-Free `onEdit` Approval**: Replaces problematic single-flag triggers with dual-mode evaluation (`e.value === 'TRUE'` or `range.getValue() === true`), preventing UI deadlocks.
   * **Automatic Trigger Cleanup**: Auto-removes event listeners upon report finalization to stay safely under Google's 20-trigger quota limit.
   * **Auto Signature Technician Placement**: Programmatically positions PNG signature graphics with exact coordinate offsets (`D36`, 102x65px) without crashing if assets are absent.
-* **Zero-Dependency Local `pdf-lib` Multi-Sheet Merger v16.0 (`n8n-workflows/08-pln-finalize-pdf-v16-local-pdflib.json`)**:
+* **Zero-Dependency Local `pdf-lib` Multi-Sheet Merger v16.0 (`n8n-workflows/07-pln-finalize-pdf-local-pdflib.json`)**:
   * Merges up to 4 distinct PDF documents in a single atomic pass: `TN` (portrait), `PERBANDINGAN` (landscape), `SCTV HITUNG` (calculation sheet), and the original supplier invoice.
   * In-process single-page slicing ensures zero instruction page leakage.
 * **Sequential Gemini Multimodal OCR & Sheet Builder (`n8n-workflows/05-pln-gemini-ocr-sheet-builder.json`)**:
@@ -122,7 +122,7 @@ telemetry-workflow-automation/
 │   ├── 05-pln-gemini-ocr-sheet-builder.json   # Multi-customer PLN Gemini OCR & auto report builder
 │   ├── 06-pln-finalize-pdf-cloudconvert.json  # CloudConvert 3-PDF merger variant
 │   ├── 07-pln-finalize-pdf-local-pdflib.json  # Local pdf-lib 3-PDF merger (v14.6)
-│   └── 08-pln-finalize-pdf-v16-local-pdflib.json # Local pdf-lib 4-PDF merger with Auto Hitung (v16.0)
+│   └── 07-pln-finalize-pdf-local-pdflib.json # Local pdf-lib 4-PDF merger with Auto Hitung (v16.0)
 │
 ├── apps-script/                               # Google Apps Script enterprise modules
 │   ├── 01-master-metering/
@@ -182,7 +182,7 @@ telemetry-workflow-automation/
 
 ### 1. Deploying n8n Workflows
 1. In your **n8n** console, navigate to **Workflows** $\rightarrow$ **Add Workflow** $\rightarrow$ **Import from File**.
-2. Select any JSON workflow from the `n8n-workflows/` directory (e.g. `08-pln-finalize-pdf-v16-local-pdflib.json`).
+2. Select any JSON workflow from the `n8n-workflows/` directory (e.g. `07-pln-finalize-pdf-local-pdflib.json`).
 3. Configure the OAuth2 credentials for:
    * **Google Drive OAuth2**
    * **Google Docs OAuth2**

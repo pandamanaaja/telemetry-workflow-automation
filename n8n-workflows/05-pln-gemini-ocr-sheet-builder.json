@@ -80,7 +80,7 @@
         "resource": "document",
         "modelId": {
           "__rl": true,
-          "value": "models/gemini-2.5-flash-lite",
+          "value": "models/gemini-3.5-flash-lite",
           "mode": "id"
         },
         "text": "You extract exactly 11 fields from an Indonesian PLN electricity billing PDF. Read table columns carefully, including Stand Awal and Stand Akhir for LWBP, WBP, kVArh. Return ONLY a single valid JSON object (no markdown), keys exactly: id_pelanggan (string), nama_pelanggan (string), jatuh_tempo_bulan (Indonesian month string), jatuh_tempo_tahun (integer), total_harus_dibayar (integer rupiah), stand_akhir_lwbp (decimal string), stand_akhir_wbp (decimal string), stand_awal_lwbp (decimal string), stand_awal_wbp (decimal string), stand_akhir_kvarh (decimal string), stand_awal_kvarh (decimal string). Use null if unreadable or absent, but an explicitly printed zero is \"0\". Only take month and year from Jatuh Tempo, not billing month. Remove thousands separators in meter readings, preserve precision and trailing decimal zeros. Example: 173,446.440 => \"173446.440\". Do not infer, calculate, or manufacture readings. The field total_harus_dibayar must be from Total Yang Harus Dibayarkan, not any subtotal.",
@@ -103,7 +103,7 @@
       "credentials": {
         "googlePalmApi": {
           "id": "YOUR_GEMINI_API_CREDENTIAL_ID",
-          "name": "Google Gemini API Account"
+          "name": "Google Gemini(PaLM) Api account"
         }
       }
     },
@@ -345,7 +345,7 @@
         "url": "https://script.google.com/macros/s/YOUR_APPS_SCRIPT_DEPLOYMENT_ID/exec",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  secret: 'YOUR_PLN_REPORT_WEBHOOK_SECRET',\n  action: 'create_report',\n  customer_id: $('Validate 11 Fields').item.json.id_pelanggan,\n  bulan_jatuh_tempo: $('Validate 11 Fields').item.json.jatuh_tempo_bulan,\n  tahun_jatuh_tempo: $('Validate 11 Fields').item.json.jatuh_tempo_tahun,\n  file_id: $('Validate 11 Fields').item.json.file_id,\n  technician: $('Validate 11 Fields').item.json.technician\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  secret: \"YOUR_PLN_REPORT_WEBHOOK_SECRET\",\n  action: \"create_report\",\n  customer_id: $json[\"ID Pelanggan\"],\n  due_month: $json[\"Bulan Jatuh Tempo\"],\n  due_year: $json[\"Tahun Jatuh Tempo\"],\n  amount: $json[\"Total Harus Dibayar\"],\n  file_id: $json[\"File ID\"],\n  technician: \"\"\n}) }}",
         "options": {
           "redirect": {
             "redirect": {
@@ -413,7 +413,7 @@
         688
       ],
       "notesInFlow": true,
-      "webhookId": "pln-ocr-pause-wait-webhook",
+      "webhookId": "eb5a4629-02db-45ea-a81c-b1727da26a52",
       "notes": "Jeda 3 detik setelah laporan atau review, sebelum melanjutkan PDF berikutnya."
     }
   ],
@@ -566,11 +566,18 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "31de76eb-d04d-41ce-af7f-dd08fdbe404f",
+  "versionId": "d7f33c91-c511-40b3-92cd-94d618bda5e8",
   "meta": {
-    "instanceId": "YOUR_N8N_INSTANCE_ID"
+    "instanceId": "bb73d2675d58f89e4780b8a797d6cd262a5ce29481cc4b44e89e48a21c773ea0"
   },
   "nodeGroups": [],
-  "id": "05-pln-gemini-ocr-sheet-builder",
-  "tags": []
+  "id": "xx8ELgnhyYxCCd9i",
+  "tags": [
+    {
+      "updatedAt": "2026-08-27T07:47:08.355Z",
+      "createdAt": "2026-08-27T07:47:08.355Z",
+      "id": "JFF5ujZZBJEM2U9e",
+      "name": "New Project (In Dev)"
+    }
+  ]
 }
