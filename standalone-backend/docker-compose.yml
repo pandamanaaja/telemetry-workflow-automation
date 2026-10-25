@@ -1,0 +1,17 @@
+services:
+  pln-report-service:
+    build: .
+    container_name: pln-report-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PLN_API_SECRET_TOKEN=YOUR_STANDALONE_API_SECRET_TOKEN
+      - PLN_TEMP_DIR=/tmp/pln_reports
+    volumes:
+      - ./templates:/opt/pln-report-service/templates:ro
+      - ./credentials:/opt/pln-report-service/credentials:ro
+      - pln_temp_data:/tmp/pln_reports
+
+volumes:
+  pln_temp_data:
