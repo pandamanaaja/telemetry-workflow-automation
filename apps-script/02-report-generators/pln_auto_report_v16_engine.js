@@ -24,7 +24,7 @@
  *    - Lapis 3: Fallback template presisi (Joglo: 30-33, Template lainnya: 31-34).
  * 5. SCTV HITUNG AUTOMATION & 100% CHAIN CONTINUITY:
  *    - Stand Meter Awal otomatis menyambung dari Stand Akhir laporan bulan lalu di Drive.
- *    - Prediksi terkalibrasi margin bertingkat Rp 100rb - 500rb disesuaikan jumlah hari.
+ *    - Prediksi terkalibrasi rentang margin dinamis -Rp 500rb s/d +Rp 500rb disesuaikan tren hari di bulan (kenaikan 30->31, penurunan 31->30/29).
  *    - Pembersihan tuntas seluruh placeholder: <<Tagihan 1 bulan sebelum>>, <<Bulan Jatuh Tempo>>,
  *      <<Tahun Jatuh Tempo>>, <<Awal tagihan>>, <<Akhir tagihan>>, <<tanggal saat laporan dibuat>>, <<nama teknisi>>.
  * 6. SHEET PERBANDINGAN RAPI & PRESISI (ANTI-BERANTAKAN):
@@ -1013,6 +1013,23 @@ function plnFillComparison_(sheet, months, technician, customer, duePeriod) {
   // Tagihan (Row 33) & Bulan Tagihan (Row 34)
   sheet.getRange(33, 2, 2, 3).setValues([data.bills, data.billPeriods]);
   sheet.getRange('B33:D33').setNumberFormat('"Rp" #,##0');
+  // Jika SCTV: Lengkapi keterangan selisih pembayaran di baris H12/H19 berdasarkan tren hari pemakaian
+  if (customer && customer.key === 'SCTV') {
+    try {
+      const daysArr = data.days.map(d => parseInt(d, 10) || 30);
+      const prevDays = daysArr[1] || 31;
+      const currDays = daysArr[2] || 30;
+      const dayDiff = currDays - prevDays;
+
+      if (dayDiff < 0) {
+        sheet.getRange('H12').setValue('Biaya bulan ini mengalami penurunan dari bulan lalu, karena jumlah hari pemakaian berkurang (' + currDays + ' hari vs ' + prevDays + ' hari).');
+      } else if (dayDiff > 0) {
+        sheet.getRange('H19').setValue('Biaya bulan ini mengalami kenaikan dari bulan lalu, karena jumlah hari pemakaian bertambah (' + currDays + ' hari vs ' + prevDays + ' hari).');
+      } else {
+        sheet.getRange('H12').setValue('Biaya bulan ini stabil dibandingkan bulan lalu (jumlah hari pemakaian sama: ' + currDays + ' hari).');
+      }
+    } catch (_) {}
+  }
 
   // Bersihkan instruction & bersihkan semua placeholder
   plnRemoveInstructionRows_(sheet);
@@ -1381,19 +1398,32 @@ function plnFetchAirconReadings_(duePeriod) {
 // ============================================================
 
 function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, airconData) {
-  const prevMonth = plnShiftMonth_(duePeriod, -1);
-  const daysInMonth = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).getDate();
+  const currUsageMonth = plnShiftMonth_(duePeriod, -1);
+  const prevUsageMonth = plnShiftMonth_(currUsageMonth, -1);
 
-  // 1. Target Margin Dinamis Sesuai Hari: Rp 100.000 - Rp 500.000 (Presisi & Selisih Selalu Positif)
-  let targetMargin = 320000;
-  if (daysInMonth <= 28) {
-    targetMargin = 150000; // ~Rp 150.000 untuk 28 hari (Februari biasa)
-  } else if (daysInMonth === 29) {
-    targetMargin = 220000; // ~Rp 220.000 untuk 29 hari (Februari kabisat)
-  } else if (daysInMonth === 30) {
-    targetMargin = 320000; // ~Rp 320.000 untuk 30 hari (Apr, Jun, Sep, Nov)
+  const daysCurr = new Date(currUsageMonth.getFullYear(), currUsageMonth.getMonth() + 1, 0).getDate();
+  const daysPrev = new Date(prevUsageMonth.getFullYear(), prevUsageMonth.getMonth() + 1, 0).getDate();
+  const dayDiff = daysCurr - daysPrev;
+
+  // 1. Target Margin Dinamis Sesuai Perubahan Hari: Rentang -Rp 500.000 s/d +Rp 500.000
+  //    - Kenaikan (+) jika hari bulan sebelumnya 30 dan bulan berjalan 31 (+ margin s/d +500.000)
+  //    - Penurunan (-) jika hari turun 31 ke 30 atau 29/28 (- margin s/d -500.000)
+  //    - Stabil (~Rp 0) jika jumlah hari pemakaian sama (31 ke 31 atau 30 ke 30)
+  let targetMargin = 0;
+  if (dayDiff >= 3) {
+    targetMargin = 500000;   // Kenaikan drastis (28 -> 31 hari, misal Feb -> Mar)
+  } else if (dayDiff === 2) {
+    targetMargin = 420000;   // Kenaikan signifikan (29 -> 31 hari, Feb kabisat -> Mar)
+  } else if (dayDiff === 1) {
+    targetMargin = 350000;   // Kenaikan 1 hari (30 -> 31 hari, misal Sep -> Okt)
+  } else if (dayDiff === 0) {
+    targetMargin = 25000;    // Hari sama (31 -> 31 hari atau 30 -> 30 hari), stabil ~Rp 0
+  } else if (dayDiff === -1) {
+    targetMargin = -350000;  // Penurunan 1 hari (31 -> 30 hari, misal Agu -> Sep)
+  } else if (dayDiff === -2) {
+    targetMargin = -420000;  // Penurunan 2 hari (31 -> 29 hari, Jan -> Feb kabisat)
   } else {
-    targetMargin = 450000; // ~Rp 450.000 untuk 31 hari (Jan, Mar, Mei, Jul, Agu, Okt, Des)
+    targetMargin = -500000;  // Penurunan drastis (31 -> 28 hari, Jan -> Feb biasa)
   }
 
   // 2. Stand Meter Awal Default Baseline
@@ -1444,8 +1474,8 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
     airconDiffLwbp = Math.max(0, airconAkhirLwbp - airconAwalLwbp);
   } else {
     // Estimasi pemakaian wajar bulanan SCTV Aircon (~89.25 WBP, ~469.21 LWBP per 31 hari)
-    airconDiffWbp = Math.round(((89.25 / 31) * daysInMonth) * 100) / 100;
-    airconDiffLwbp = Math.round(((469.21 / 31) * daysInMonth) * 100) / 100;
+    airconDiffWbp = Math.round(((89.25 / 31) * daysCurr) * 100) / 100;
+    airconDiffLwbp = Math.round(((469.21 / 31) * daysCurr) * 100) / 100;
     airconAkhirWbp = Math.round((airconAwalWbp + airconDiffWbp) * 100) / 100;
     airconAkhirLwbp = Math.round((airconAwalLwbp + airconDiffLwbp) * 100) / 100;
   }
@@ -1489,10 +1519,10 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
     diffTenagaWbp = (tenagaTargetRp * 0.366) / (55 * tarifWbp);
     diffTenagaLwbp = (tenagaTargetRp * 0.634) / (50 * tarifLwbp);
   } else {
-    diffIvmWbp = (95.74 / 31) * daysInMonth;
-    diffIvmLwbp = (261.54 / 31) * daysInMonth;
-    diffTenagaWbp = (38.94 / 31) * daysInMonth;
-    diffTenagaLwbp = (111.30 / 31) * daysInMonth;
+    diffIvmWbp = (95.74 / 31) * daysCurr;
+    diffIvmLwbp = (261.54 / 31) * daysCurr;
+    diffTenagaWbp = (38.94 / 31) * daysCurr;
+    diffTenagaLwbp = (111.30 / 31) * daysCurr;
   }
 
   diffIvmWbp = Math.round(diffIvmWbp * 100) / 100;
