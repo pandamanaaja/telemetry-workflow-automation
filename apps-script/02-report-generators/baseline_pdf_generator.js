@@ -6,6 +6,10 @@
  * using a persistent pointer stored in ScriptProperties (LAST_PROCESSED_ROW).
  * Extracts tabular metrics, applies layout styling, exports the rendered sheet
  * to PDF via Drive Export API, and archives the file into site-specific folders.
+ *
+ * Supported Output Format:
+ * [Report Type] [Nama Site] [Tanggal] [Jam].pdf
+ * Example: Laporan Genset Kebon Jeruk 07-11-2026 08.25.pdf
  * ==============================================================================
  */
 
@@ -18,34 +22,44 @@ const PDF_CONFIG = {
   // Baseline row awal: baris sebelum baseline ini dianggap telah diproses
   DEFAULT_BASELINE_ROW: 51,
 
-  // Profil konfigurasi laporan (dapat disesuaikan)
+  // Profil konfigurasi laporan
   PROFILES: {
     genset: {
       reportType: "Laporan Genset",
       siteColumnIndex: 2,       // Kolom B
       tanggalColumnIndex: 51,   // Kolom AY
+      jamColumnIndex: null      // Kolom jam terpisah jika ada (null = otomatis ekstrak dari kolom tanggal / waktu proses)
     },
     bukuTamu: {
       reportType: "Laporan Buku Tamu",
       siteColumnIndex: 2,       // Kolom B
       tanggalColumnIndex: 11,   // Kolom K
+      jamColumnIndex: null
     }
   },
 
   ACTIVE_PROFILE: "genset", // 'genset' atau 'bukuTamu'
 
+  // Konfigurasi Site & Destinasi Folder Google Drive
+  // CATATAN KEAMANAN: Kredensial / ID Folder disensor dengan placeholder
   SITES: {
     bekasi: {
-      keyword: "bekasi",
+      keyword: ["bekasi"],
       label: "Bekasi",
       reportSheetName: "Bekasi",
       folderId: "YOUR_BEKASI_FOLDER_ID"
     },
     hambalang: {
-      keyword: "hambalang",
+      keyword: ["hambalang"],
       label: "Hambalang",
       reportSheetName: "Hambalang",
       folderId: "YOUR_HAMBALANG_FOLDER_ID"
+    },
+    kebon_jeruk: {
+      keyword: ["kebon jeruk", "kebonjeruk", "kb jeruk", "kb. jeruk"],
+      label: "Kebon Jeruk",
+      reportSheetName: "Kebon Jeruk",
+      folderId: "YOUR_KEBON_JERUK_FOLDER_ID"
     }
   }
 };
@@ -98,8 +112,12 @@ function cekDanBuatPDF() {
     // =========================================================================
     const profile = PDF_CONFIG.PROFILES[PDF_CONFIG.ACTIVE_PROFILE] || PDF_CONFIG.PROFILES.genset;
     const numNewRows = lastRow - lastProcessedRow;
-    const maxColumn = Math.max(profile.siteColumnIndex, profile.tanggalColumnIndex);
     const startRow = lastProcessedRow + 1;
+    const maxColumn = Math.max(
+      profile.siteColumnIndex, 
+      profile.tanggalColumnIndex, 
+      profile.jamColumnIndex || 0
+    );
 
     const rowsData = dataSheet.getRange(startRow, 1, numNewRows, maxColumn).getValues();
     const siteList = Object.values(PDF_CONFIG.SITES);
@@ -110,36 +128,57 @@ function cekDanBuatPDF() {
 
       const siteRaw = rowData[profile.siteColumnIndex - 1];
       const tanggalValue = rowData[profile.tanggalColumnIndex - 1];
+      const jamValue = profile.jamColumnIndex ? rowData[profile.jamColumnIndex - 1] : null;
       const siteValue = String(siteRaw || "").trim().toLowerCase();
 
       Logger.log(`Memproses Row ${currentRow} | Site: ${siteRaw} | Tanggal: ${tanggalValue}`);
 
-      // 1. Cek kelengkapan tanggal
+      // 1. Cek baris kosong total (Site & Tanggal kosong) -> Lewati dan majukan pointer agar tidak macet permanen
+      if (!siteValue && (!tanggalValue || String(tanggalValue).trim() === "")) {
+        Logger.log(`Row ${currentRow}: Baris kosong terdeteksi. Skip & majukan pointer.`);
+        props.setProperty(PDF_CONFIG.PROPERTY_KEY_LAST_ROW, String(currentRow));
+        continue;
+      }
+
+      // 2. Cek kelengkapan tanggal jika site terisi -> Menunggu operator melengkapi input pada trigger berikutnya
       if (!tanggalValue || String(tanggalValue).trim() === "") {
-        Logger.log(`Row ${currentRow}: Tanggal kosong. Menunggu pengisian lengkap.`);
+        Logger.log(`Row ${currentRow}: Site terisi (${siteRaw}), namun Tanggal masih kosong. Menunggu pengisian lengkap.`);
         break;
       }
 
-      // 2. Cek kelengkapan site
+      // 3. Cek kelengkapan site
       if (!siteValue) {
         Logger.log(`Row ${currentRow}: Site kosong. Skip.`);
         props.setProperty(PDF_CONFIG.PROPERTY_KEY_LAST_ROW, String(currentRow));
         continue;
       }
 
-      // 3. Cocokkan konfigurasi site
-      const siteConfig = siteList.find(s => siteValue.includes(s.keyword));
+      // 4. Cocokkan konfigurasi site (Mendukung Multi-Keyword)
+      const siteConfig = siteList.find(s => {
+        if (Array.isArray(s.keyword)) {
+          return s.keyword.some(k => siteValue.includes(k.toLowerCase()));
+        }
+        return siteValue.includes(String(s.keyword).toLowerCase());
+      });
+
       if (!siteConfig) {
         Logger.log(`Row ${currentRow}: Site tidak dikenali (${siteRaw}). Skip.`);
         props.setProperty(PDF_CONFIG.PROPERTY_KEY_LAST_ROW, String(currentRow));
         continue;
       }
 
-      // 4. Ekspor PDF dengan identifier nomor baris
-      buatPDFDariSheet_(ss, siteConfig, currentRow, profile.reportType);
+      // 5. Ekstraksi Tanggal & Jam terformat
+      const { strTanggal, strJam } = formatTanggalDanJam_(tanggalValue, jamValue);
 
-      // Simpan checkpoint progress
-      props.setProperty(PDF_CONFIG.PROPERTY_KEY_LAST_ROW, String(currentRow));
+      // 6. Ekspor PDF dengan identifier tanggal dan jam
+      try {
+        buatPDFDariSheet_(ss, siteConfig, currentRow, profile.reportType, strTanggal, strJam);
+        // Simpan checkpoint progress jika ekspor berhasil
+        props.setProperty(PDF_CONFIG.PROPERTY_KEY_LAST_ROW, String(currentRow));
+      } catch (errRow) {
+        Logger.log(`[ERROR] Gagal export PDF di Row ${currentRow} (${siteConfig.label}): ${errRow.message}`);
+        break; // Hentikan agar baris yang gagal tidak terlewat dan dapat diinvestigasi
+      }
     }
 
     Logger.log("Pemrosesan baris baru selesai.");
@@ -153,12 +192,59 @@ function cekDanBuatPDF() {
 }
 
 /**
+ * Helper: Ekstraksi dan formatting Tanggal serta Jam dari cell data
+ */
+function formatTanggalDanJam_(tanggalVal, jamVal) {
+  const tz = PDF_CONFIG.TIMEZONE;
+  let strTanggal = "";
+  let strJam = "";
+
+  // Olah Tanggal
+  if (tanggalVal instanceof Date) {
+    strTanggal = Utilities.formatDate(tanggalVal, tz, "dd-MM-yyyy");
+    if (!jamVal && (tanggalVal.getHours() !== 0 || tanggalVal.getMinutes() !== 0)) {
+      strJam = Utilities.formatDate(tanggalVal, tz, "HH.mm");
+    }
+  } else if (tanggalVal) {
+    const parsed = new Date(tanggalVal);
+    if (!isNaN(parsed.getTime())) {
+      strTanggal = Utilities.formatDate(parsed, tz, "dd-MM-yyyy");
+      if (!jamVal && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0)) {
+        strJam = Utilities.formatDate(parsed, tz, "HH.mm");
+      }
+    } else {
+      strTanggal = String(tanggalVal).trim().replace(/[/\\:]/g, "-");
+    }
+  }
+
+  // Olah Jam
+  if (jamVal) {
+    if (jamVal instanceof Date) {
+      strJam = Utilities.formatDate(jamVal, tz, "HH.mm");
+    } else {
+      strJam = String(jamVal).trim().replace(/:/g, ".");
+    }
+  }
+
+  // Fallback ke waktu eksekusi jika komponen kosong
+  const now = new Date();
+  if (!strTanggal) strTanggal = Utilities.formatDate(now, tz, "dd-MM-yyyy");
+  if (!strJam) strJam = Utilities.formatDate(now, tz, "HH.mm");
+
+  return { strTanggal, strJam };
+}
+
+/**
  * Helper: Merender sheet ke PDF via Google Sheets Export endpoint
  */
-function buatPDFDariSheet_(ss, siteConfig, rowNumber, reportType) {
+function buatPDFDariSheet_(ss, siteConfig, rowNumber, reportType, strTanggal, strJam) {
   const reportSheet = ss.getSheetByName(siteConfig.reportSheetName);
   if (!reportSheet) {
     throw new Error("Sheet laporan tidak ditemukan: " + siteConfig.reportSheetName);
+  }
+
+  if (!siteConfig.folderId || siteConfig.folderId.startsWith("YOUR_")) {
+    throw new Error(`Folder ID untuk site "${siteConfig.label}" belum dikonfigurasi (masih placeholder).`);
   }
 
   // Paksa flushing kalkulasi formula sheet sebelum PDF di-generate
@@ -167,8 +253,9 @@ function buatPDFDariSheet_(ss, siteConfig, rowNumber, reportType) {
   const folder = DriveApp.getFolderById(siteConfig.folderId);
   const token = ScriptApp.getOAuthToken();
 
-  const timestamp = Utilities.formatDate(new Date(), PDF_CONFIG.TIMEZONE, "dd-MM-yyyy_HH-mm-ss");
-  const fileName = `${reportType} ${siteConfig.label} Row_${rowNumber} ${timestamp}.pdf`;
+  // Format Penamaan File: [Report Type] [Nama Site] [Tanggal] [Jam].pdf
+  // Catatan: Tanda titik dua (:) diganti dengan titik (.) agar aman di file system Windows/Mac
+  const fileName = `${reportType} ${siteConfig.label} ${strTanggal} ${strJam}.pdf`;
 
   const exportUrl =
     "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export" +
@@ -204,12 +291,23 @@ function buatPDFDariSheet_(ss, siteConfig, rowNumber, reportType) {
   }
 
   const file = folder.createFile(response.getBlob().setName(fileName));
-  Logger.log("PDF berhasil dibuat: " + file.getName());
+  Logger.log(`[SUKSES] PDF berhasil dibuat: ${file.getName()}`);
 }
 
 // ==========================================
 // PENGATURAN BASELINE (MANUAL & UTILITY)
 // ==========================================
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('⚙️ Otomasi PDF')
+    .addItem('▶️ Jalankan Cek Data Sekarang', 'testPDFManual')
+    .addSeparator()
+    .addItem('🎯 Set Baseline Baris (Dialog)', 'setBaselineManualUI')
+    .addItem('🔄 Reset Baseline (Default)', 'resetLastProcessedRow')
+    .addItem('📊 Cek Status Baseline', 'cekStatusBaseline')
+    .addToUi();
+}
 
 function setBaselineManualUI() {
   const ui = SpreadsheetApp.getUi();
