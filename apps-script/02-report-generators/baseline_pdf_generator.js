@@ -8,8 +8,10 @@
  * to PDF via Drive Export API, and archives the file into site-specific folders.
  *
  * Supported Output Format:
- * [Report Type] [Nama Site] [Tanggal] [Jam].pdf
- * Example: Laporan Genset Kebon Jeruk 07-11-2026 08.25.pdf
+ * Laporan Buku Tamu (Nama Site) (Tanggal) (Jam).pdf
+ * Example: Laporan Buku Tamu (Bekasi) (07-11-2026) (08.25).pdf
+ * Atau opsi format standar tanpa kurung:
+ * Example: Laporan Buku Tamu Bekasi 07-11-2026 08.25.pdf
  * ==============================================================================
  */
 
@@ -24,21 +26,26 @@ const PDF_CONFIG = {
 
   // Profil konfigurasi laporan
   PROFILES: {
-    genset: {
-      reportType: "Laporan Genset",
-      siteColumnIndex: 2,       // Kolom B
-      tanggalColumnIndex: 51,   // Kolom AY
-      jamColumnIndex: null      // Kolom jam terpisah jika ada (null = otomatis ekstrak dari kolom tanggal / waktu proses)
-    },
     bukuTamu: {
       reportType: "Laporan Buku Tamu",
       siteColumnIndex: 2,       // Kolom B
       tanggalColumnIndex: 11,   // Kolom K
+      jamColumnIndex: null      // Kolom jam terpisah jika ada (null = otomatis ekstrak dari kolom tanggal / waktu proses)
+    },
+    genset: {
+      reportType: "Laporan Genset",
+      siteColumnIndex: 2,       // Kolom B
+      tanggalColumnIndex: 51,   // Kolom AY
       jamColumnIndex: null
     }
   },
 
-  ACTIVE_PROFILE: "genset", // 'genset' atau 'bukuTamu'
+  ACTIVE_PROFILE: "bukuTamu", // 'bukuTamu' atau 'genset'
+
+  // Gaya penamaan file:
+  // "PARENTHESES" -> Laporan Buku Tamu (Bekasi) (07-11-2026) (08.25).pdf
+  // "CLEAN"       -> Laporan Buku Tamu Bekasi 07-11-2026 08.25.pdf
+  FILENAME_STYLE: "PARENTHESES",
 
   // Konfigurasi Site & Destinasi Folder Google Drive
   // CATATAN KEAMANAN: Kredensial / ID Folder disensor dengan placeholder
@@ -253,9 +260,12 @@ function buatPDFDariSheet_(ss, siteConfig, rowNumber, reportType, strTanggal, st
   const folder = DriveApp.getFolderById(siteConfig.folderId);
   const token = ScriptApp.getOAuthToken();
 
-  // Format Penamaan File: [Report Type] [Nama Site] [Tanggal] [Jam].pdf
-  // Catatan: Tanda titik dua (:) diganti dengan titik (.) agar aman di file system Windows/Mac
-  const fileName = `${reportType} ${siteConfig.label} ${strTanggal} ${strJam}.pdf`;
+  // Format Penamaan File:
+  // Mendukung: "Laporan Buku Tamu (Bekasi) (07-11-2026) (08.25).pdf" atau tanpa tanda kurung
+  // Titik dua (:) diganti dengan titik (.) agar aman di filesystem Windows/Mac/Linux
+  const fileName = PDF_CONFIG.FILENAME_STYLE === "PARENTHESES"
+    ? `${reportType} (${siteConfig.label}) (${strTanggal}) (${strJam}).pdf`
+    : `${reportType} ${siteConfig.label} ${strTanggal} ${strJam}.pdf`;
 
   const exportUrl =
     "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export" +
