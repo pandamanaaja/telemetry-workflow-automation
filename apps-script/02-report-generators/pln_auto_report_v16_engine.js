@@ -1,43 +1,15 @@
 /**
  * ============================================================
- * PLN AUTO REPORT v16.0 (EXCEL & SHEET CONTINUITY SCAN + AUTO TRIGGER CLEANUP)
+ * PLN AUTO REPORT v16.7 (EXACT PDF MATCH & CONTINUITY SCAN)
  * COMPLETE MULTI-CUSTOMER GOOGLE APPS SCRIPT
  * ============================================================
  *
- * FITUR TERLENGKAP DI VERSI 16.0:
- * 1. DUAL FORMAT CONTINUITY SCAN (GOOGLE SHEETS & EXCEL .XLSX / .XLS):
- *    - Pencarian riwayat stand meter bulan lalu sekarang mendukung Google Sheets maupun Microsoft Excel (.xlsx/.xls).
- *    - Jika berformat Excel, sistem otomatis membaca langsung atau melakukan konversi virtual sementara via Drive REST API,
- *      membaca stand meter, dan segera membersihkan file temp (zero clutter).
- *    - Multi-folder recursive scanning (BFS queue) menyusuri folder SCTV utama dan seluruh subfolder bulanan di dalamnya.
- * 2. AUTOMATIC & MANUAL TRIGGER CLEANUP (ANTI LIMIT 20 TRIGGER):
- *    - Pembersihan otomatis saat membuat report baru (plnCleanupOldTriggers_).
- *    - Penghapusan trigger otomatis saat laporan berstatus COMPLETED (plnRemoveTriggerForSpreadsheet_).
- *    - Fungsi pembersihan manual sekali klik ('hapusSemuaTriggerLama') dari menu Apps Script dropdown untuk mencegah limit kuota 20 trigger.
- * 3. AUTO SIGNATURE TECHNICIAN (FAIL-SAFE & SYNCED):
- *    - Terhubung langsung ke folder Database TTD (YOUR_PLN_SIGNATURE_FOLDER_ID).
- *    - Ukuran 102 x 65 px, ditempel tepat 4 baris di atas sel nama teknisi (offset X=35px, Y=1px).
- *    - Jika gambar/folder belum ada di Google Drive, script tetap berjalan mulus tanpa error.
- * 4. 3-TIER BULLETPROOF PAYMENT ROW DETECTION:
- *    - Lapis 1: Label teks exact di Kolom B.
- *    - Lapis 2: Regex toleran (mendukung 'Biaya materai', 'Materai', 'Biaya meterai', 'Total').
- *    - Lapis 3: Fallback template presisi (Joglo: 30-33, Template lainnya: 31-34).
- * 5. SCTV HITUNG AUTOMATION & 100% CHAIN CONTINUITY:
- *    - Stand Meter Awal otomatis menyambung dari Stand Akhir laporan bulan lalu di Drive.
- *    - Prediksi terkalibrasi rentang margin dinamis -Rp 500rb s/d +Rp 500rb disesuaikan tren hari di bulan (kenaikan 30->31, penurunan 31->30/29).
- *    - Pembersihan tuntas seluruh placeholder: <<Tagihan 1 bulan sebelum>>, <<Bulan Jatuh Tempo>>,
- *      <<Tahun Jatuh Tempo>>, <<Awal tagihan>>, <<Akhir tagihan>>, <<tanggal saat laporan dibuat>>, <<nama teknisi>>.
- * 6. SHEET PERBANDINGAN RAPI & PRESISI (ANTI-BERANTAKAN):
- *    - Kolom B, C, D (Bulan -2, Bulan -1, Bulan Tagihan) terisi rapi tanpa menimpa Kolom E-G.
- *    - Format tanggal konsisten: '1 <Bulan Pemakaian> <Tahun>' dan '1 <Bulan Tagihan> <Tahun>'.
- *    - Dukungan fallback jika histori bulan lalu belum lengkap (plnFillIncompleteComparisonV139_).
- * 7. UNIVERSAL IN-MEMORY PLACEHOLDER CLEANER:
- *    - Sapuan menyeluruh di TN, PERBANDINGAN, dan HITUNG memastikan tidak ada '<<...>>' yang tertinggal.
- * 8. DUAL ARCHIVE PDF STORAGE & ZERO LEAK SINGLE-PAGE EXPORT:
- *    - PDF tersimpan di folder per stasiun + terduplikasi ke master ALL_PDFS_FOLDER_ID.
- *    - Mendukung ekspor lembar HITUNG untuk digabungkan menjadi PDF 4 halaman untuk SCTV.
- * 9. WEB APP COMPATIBILITY:
- *    - Dilengkapi alias plnJson anti ReferenceError dan endpoint cleanup_triggers.
+ * UPDATE v16.7:
+ * - Menjamin Total Permohonan Pembayaran SAMA PERSIS dengan struk PDF PLN.
+ * - Mengoreksi duplikasi hitung Materai:
+ *   Jumlah Tagihan PLN = Total Harus Dibayar - Rp 10.000 (Tagihan murni PLN)
+ *   Materai            = Rp 10.000
+ *   Total              = Jumlah Tagihan PLN + Materai (Pas 100% sama dengan PDF)
  * ============================================================
  */
 
@@ -48,7 +20,7 @@
 
 const PLN_CONFIG = {
 
-  VERSION: '16.5',
+  VERSION: '16.7',
 
   MASTER_ID:
     'YOUR_PLN_MASTER_SPREADSHEET_ID',
@@ -57,7 +29,7 @@ const PLN_CONFIG = {
   ALL_PDFS_FOLDER_ID:
     'YOUR_PLN_MASTER_ALL_PDFS_FOLDER_ID',
 
-  // Folder Database Tanda Tangan Teknisi (Drive Link: YOUR_PLN_SIGNATURE_FOLDER_ID)
+  // Folder Database Tanda Tangan Teknisi
   SIGNATURE_FOLDER_ID:
     'YOUR_PLN_SIGNATURE_FOLDER_ID',
 
@@ -148,7 +120,7 @@ const PLN_CUSTOMERS = {
     paymentTemplate: 'TN-1',
     comparisonTemplate: 'TN-1 A',
     filePrefix: 'IVM_Panjang_Permohonan Pembayaran_PLN H.Mustofa',
-    documentCode: ''
+    documentCode: 'ST PANJANG-PLN-IVM'
   },
 
   '548400528183': {
@@ -159,7 +131,7 @@ const PLN_CUSTOMERS = {
     comparisonTemplate: 'TN-SCTV A',
     calculationTemplate: 'SCTV Hitung',
     filePrefix: 'SCTV_Panjang_Permohonan Pembayaran_PLN',
-    documentCode: ''
+    documentCode: 'ST PANJANG-PLN-SCTV'
   },
 
   '537420834389': {
@@ -179,7 +151,7 @@ const PLN_CUSTOMERS = {
     paymentTemplate: 'TN-Hambalang',
     comparisonTemplate: 'TN-Hambalang A',
     filePrefix: 'EMTEK_Hambalang_Permohonan Pembayaran PLN',
-    documentCode: ''
+    documentCode: 'HAMBALANG-PLN-IVM'
   }
 
 };
@@ -245,7 +217,6 @@ function plnPeriod_(arg1, arg2) {
   const n1 = parseInt(arg1, 10);
   const n2 = parseInt(arg2, 10);
 
-  // Jika arg1 adalah tahun (angka 2000-2100)
   if (n1 >= 2000 && n1 <= 2100) {
     year = n1;
     month = plnMonthNumber_(arg2);
@@ -294,28 +265,20 @@ function plnNumber_(value) {
 
   if (hasDot && hasComma) {
     if (text.indexOf('.') < text.indexOf(',')) {
-      // Indonesian format: 118.332.281,50 (titik ribuan, koma desimal)
       text = text.replace(/\./g, '').replace(',', '.');
     } else {
-      // US format: 118,332,281.50 (koma ribuan, titik desimal)
       text = text.replace(/,/g, '');
     }
   } else if (hasDot) {
     const dotCount = (text.match(/\./g) || []).length;
     if (dotCount > 1) {
-      // Lebih dari 1 titik: pasti pemisah ribuan mata uang (contoh: 118.332.281)
       text = text.replace(/\./g, '');
-    } else {
-      // Tepat 1 titik tanpa koma: SELALU TITIK DESIMAL (contoh: 11.466, 11.582, 18756.316, 3743.903)
-      // JANGAN HAPUS TITIK agar stand meter desimal tidak membengkak 1000x lipat!
     }
   } else if (hasComma) {
     const commaCount = (text.match(/,/g) || []).length;
     if (commaCount > 1) {
-      // Lebih dari 1 koma: pemisah ribuan US (contoh: 118,332,281)
       text = text.replace(/,/g, '');
     } else {
-      // Tepat 1 koma: desimal Indonesia (contoh: 11,466)
       text = text.replace(',', '.');
     }
   }
@@ -353,7 +316,6 @@ function plnGetTechnician_(payload, sourceFileId) {
     payload.operator || payload['Technician'] || ''
   ).trim();
 
-  // 1. Jika teknisi kosong dari payload, cari di sheet 'Form Responses 1' Master Spreadsheet
   if (!technician) {
     try {
       const masterSS = plnMaster_();
@@ -363,7 +325,6 @@ function plnGetTechnician_(payload, sourceFileId) {
         if (lastRow > 1) {
           const data = formSheet.getRange(2, 1, lastRow - 1, 4).getValues();
 
-          // A. Cari kecocokan file_id di Kolom 4 (Upload PDF)
           if (sourceFileId) {
             const cleanSourceId = String(sourceFileId).trim();
             for (let i = data.length - 1; i >= 0; i--) {
@@ -377,7 +338,6 @@ function plnGetTechnician_(payload, sourceFileId) {
             }
           }
 
-          // B. Jika belum ketemu, ambil dari baris form terbaru yang valid
           if (!technician) {
             for (let i = data.length - 1; i >= 0; i--) {
               const techCol = String(data[i][1] || '').trim();
@@ -395,7 +355,6 @@ function plnGetTechnician_(payload, sourceFileId) {
     }
   }
 
-  // 2. Fallback default jika masih kosong
   if (!technician) {
     technician = 'Pramadhita A';
   }
@@ -431,23 +390,22 @@ function plnRemoveInstructionRows_(sheet) {
 
 /**
  * Universal In-Memory Cleaner:
- * Membersihkan seluruh sisa placeholder '<<...>>', 'dalam angka romawi', dll.
- * di sheet secara instan dan menyeluruh.
+ * Menjamin No Surat berformat: 10/ST PANJANG-PLN-IVM/X/2026
  */
 function plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, optionalAmount) {
   if (!sheet) return;
 
   const dueMonthName = PLN_CONFIG.MONTHS[duePeriod.getMonth()];
   const dueYear = duePeriod.getFullYear();
+  const dueMonthNum = String(duePeriod.getMonth() + 1);
+  const roman = plnRomanMonth_(duePeriod);
   const prevMonth = plnShiftMonth_(duePeriod, -1);
   const prevMonthName = PLN_CONFIG.MONTHS[prevMonth.getMonth()];
   const prevYear = prevMonth.getFullYear();
   const reportDateLabel = plnDateLabel_(new Date());
   const awalDateLabel = '1 ' + prevMonthName + ' ' + prevYear;
   const akhirDateLabel = '1 ' + dueMonthName + ' ' + dueYear;
-  const roman = plnRomanMonth_(duePeriod);
 
-  // Ambil nominal tagihan jika tersedia
   let billAmount = optionalAmount ? plnNumber_(optionalAmount) : 0;
   if (!billAmount) {
     try {
@@ -460,13 +418,14 @@ function plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, option
       }
     } catch (_) {}
   }
-  if (!billAmount && customer.customerId === '548400528183') billAmount = 134467141;
+  if (!billAmount && customer.customerId === '548400528183') billAmount = 143281261;
 
-  // 1. TextFinder replacements
+  // 1. TextFinder replacements utama
   const replacements = [
     { search: '<<Nama Pelanggan>>', replace: customer.name },
     { search: '<<ID Pelanggan>>', replace: customer.customerId },
     { search: '<<Tagihan 1 bulan sebelum>>', replace: prevMonthName + ' ' + prevYear },
+    { search: '<<Bulan Jatuh Tempo dalam angka>>', replace: dueMonthNum },
     { search: '<<Bulan Jatuh Tempo>>', replace: dueMonthName },
     { search: '<<Tahun Jatuh Tempo>>', replace: String(dueYear) },
     { search: '<<tanggal saat laporan dibuat>>', replace: reportDateLabel },
@@ -483,13 +442,15 @@ function plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, option
     replacements.push({ search: '<<Tagihan PLN>>', replace: billAmount });
   }
 
-  // Handle Roman and Date labels first via TextFinder
+  // 2. Format No Surat TextFinder replacements
   try {
-    sheet.createTextFinder('<<\\s*Bulan\\s*Jatuh\\s*Tempo\\s*>>\\s*["“”]?\\s*dalam\\s*angka\\s*romawi\\s*["“”]?')
+    sheet.createTextFinder('<<\\s*Bulan\\s*Jatuh\\s*Tempo\\s*dalam\\s*angka\\s*>>')
+      .useRegularExpression(true).matchCase(false).replaceAllWith(dueMonthNum);
+    sheet.createTextFinder('<<\\s*Bulan\\s*Jatuh\\s*Tempo\\s*>>\\s*["“”]*\\s*dalam\\s*angka\\s*romawi\\s*["“”]*')
       .useRegularExpression(true).matchCase(false).replaceAllWith(roman);
-    sheet.createTextFinder('[A-Za-z]+\\s*["“”]?\\s*dalam\\s*angka\\s*romawi\\s*["“”]?')
+    sheet.createTextFinder('[A-Za-z]+\\s*["“”]*\\s*dalam\\s*angka\\s*romawi\\s*["“”]*')
       .useRegularExpression(true).matchCase(false).replaceAllWith(roman);
-    sheet.createTextFinder('["“”]?\\s*dalam\\s*angka\\s*romawi\\s*["“”]?')
+    sheet.createTextFinder('["“”]*\\s*dalam\\s*angka\\s*romawi\\s*["“”]*')
       .useRegularExpression(true).matchCase(false).replaceAllWith(roman);
     sheet.createTextFinder('<<\\s*tanggal\\s*saat\\s*laporan\\s*dibuat\\s*>>')
       .useRegularExpression(true).matchCase(false).replaceAllWith(reportDateLabel);
@@ -506,7 +467,7 @@ function plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, option
     sheet.createTextFinder('<<Akhir tagihan>>.*').useRegularExpression(true).replaceAllWith(akhirDateLabel);
   } catch (_) {}
 
-  // 2. In-Memory sweep to guarantee NO <<...>> or leftover unreplaced string remains
+  // 3. In-Memory sweep to guarantee NO <<...>> remains
   const maxRows = Math.min(sheet.getLastRow(), 70);
   const maxCols = Math.min(sheet.getMaxColumns(), 15);
   if (maxRows > 0 && maxCols > 0) {
@@ -517,17 +478,20 @@ function plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, option
     for (let r = 0; r < values.length; r++) {
       for (let c = 0; c < values[r].length; c++) {
         let cellVal = values[r][c];
-        if (typeof cellVal === 'string' && (cellVal.includes('<<') || /dalam angka romawi/i.test(cellVal))) {
+        if (typeof cellVal === 'string' && (cellVal.includes('<<') || /dalam angka/i.test(cellVal) || /dalam angka romawi/i.test(cellVal))) {
           let s = cellVal;
           s = s.replace(/<<\s*Nama Pelanggan\s*>>/gi, customer.name);
           s = s.replace(/<<\s*ID Pelanggan\s*>>/gi, customer.customerId);
-          s = s.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>\s*["“”]?\s*dalam\s*angka\s*romawi\s*["“”]?/gi, roman);
-          s = s.replace(/[A-Za-z]+\s*["“”]?\s*dalam\s*angka\s*romawi\s*["“”]?/gi, roman);
-          s = s.replace(/["“”]?\s*dalam\s*angka\s*romawi\s*["“”]?/gi, roman);
+
+          s = s.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*dalam\s*angka\s*>>/gi, dueMonthNum);
+          s = s.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>\s*["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+          s = s.replace(/[A-Za-z]+\s*["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+          s = s.replace(/["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+
           s = s.replace(/<<\s*Tagihan 1 bulan sebelum\s*>>/gi, prevMonthName + ' ' + prevYear);
           s = s.replace(/Bulan\s*<<\s*Bulan Jatuh Tempo\s*>>/gi, 'Bulan ' + dueMonthName);
-          s = s.replace(/<<\s*Bulan Jatuh Tempo\s*>>/gi, dueMonthName);
-          s = s.replace(/<<\s*Tahun Jatuh Tempo\s*>>/gi, String(dueYear));
+          s = s.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>/gi, dueMonthName);
+          s = s.replace(/<<\s*Tahun\s*Jatuh\s*Tempo\s*>>/gi, String(dueYear));
           s = s.replace(/<<\s*Awal tagihan\s*>>[^\n]*/gi, awalDateLabel);
           s = s.replace(/<<\s*Akhir tagihan\s*>>[^\n]*/gi, akhirDateLabel);
           s = s.replace(/Jakarta,\s*<<\s*tanggal\s*saat\s*laporan\s*dibuat\s*>>/gi, 'Jakarta, ' + reportDateLabel);
@@ -571,7 +535,6 @@ function plnInsertTechnicianSignature_(sheet, technician) {
       return;
     }
 
-    // Normalisasi nama teknisi
     const normalize = (str) => String(str || '')
       .toLowerCase()
       .replace(/\.[a-z0-9]+$/i, '')
@@ -582,8 +545,6 @@ function plnInsertTechnicianSignature_(sheet, technician) {
 
     const cleanTech = normalize(technician);
     const techWords = cleanTech.split(' ').filter(w => w.length > 1);
-
-    // Filter ketat: kata utama teknisi (panjang >= 4) wajib ada
     const mainWord = techWords.find(w => w.length >= 4) || techWords[0];
 
     const files = folder.getFiles();
@@ -594,7 +555,6 @@ function plnInsertTechnicianSignature_(sheet, technician) {
       const file = files.next();
       const fname = file.getName();
 
-      // PROTEKSI MUTLAK: Jangan pernah memasukkan file logo perusahaan sebagai TTD teknisi!
       if (/emtek|logo|kop|header|stamp|materai|template/i.test(fname)) {
         continue;
       }
@@ -602,19 +562,16 @@ function plnInsertTechnicianSignature_(sheet, technician) {
       const cleanFile = normalize(fname);
       if (!cleanFile || cleanFile.length < 3) continue;
 
-      // Wajib mengandung kata utama teknisi jika ada
       if (mainWord && !cleanFile.includes(mainWord) && !cleanTech.includes(cleanFile)) {
         continue;
       }
 
-      // 1. Exact match (skor tertinggi 100)
       if (cleanFile === cleanTech) {
         sigFile = file;
         bestScore = 100;
         break;
       }
 
-      // 2. Word match: semua kata teknisi ada di nama file (skor 90)
       if (techWords.length > 0 && techWords.every(w => cleanFile.includes(w))) {
         if (bestScore < 90) {
           sigFile = file;
@@ -622,7 +579,6 @@ function plnInsertTechnicianSignature_(sheet, technician) {
         }
       }
 
-      // 3. Substring match terarah (skor 80)
       if (mainWord && cleanFile.includes(mainWord)) {
         if (bestScore < 80) {
           sigFile = file;
@@ -640,7 +596,6 @@ function plnInsertTechnicianSignature_(sheet, technician) {
 
     const blob = sigFile.getBlob();
 
-    // Cari sel nama teknisi di sheet
     let targetRow = 0;
     let targetCol = 0;
 
@@ -676,7 +631,6 @@ function plnInsertTechnicianSignature_(sheet, technician) {
     }
 
     if (targetRow > 0 && targetCol > 0) {
-      // Hapus gambar lama / logo yang salah di area target sebelum menempelkan TTD asli
       try {
         const existingImages = sheet.getImages();
         for (let i = 0; i < existingImages.length; i++) {
@@ -701,10 +655,10 @@ function plnInsertTechnicianSignature_(sheet, technician) {
 
 function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
   const monthUpper = PLN_CONFIG.MONTHS[duePeriod.getMonth()].toUpperCase();
+  const dueMonthNum = String(duePeriod.getMonth() + 1);
   const roman = plnRomanMonth_(duePeriod);
   const year = duePeriod.getFullYear();
 
-  // Ganti placeholder nama teknisi dengan regex fleksibel
   try {
     sheet.createTextFinder('<<\\s*Nama\\s*Teknisi\\s*>>')
       .useRegularExpression(true)
@@ -733,19 +687,45 @@ function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
       let val = String(values[r][c] || '');
       if (!val) continue;
 
-      if (/dalam angka romawi/i.test(val) || /<<\s*Bulan\s*Jatuh\s*Tempo\s*>>/i.test(val)) {
-        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>\s*["“”]?\s*dalam\s*angka\s*romawi\s*["“”]?/gi, roman);
-        val = val.replace(/[A-Za-z]+\s*["“”]?\s*dalam\s*angka\s*romawi\s*["“”]?/gi, roman);
-        val = val.replace(/["“”]?\s*dalam\s*angka\s*romawi\s*["“”]?/gi, roman);
-        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>/gi, monthUpper);
+      const isNoSurat = /no\.?|surat|pln-|st[\.\s]|stasiu?n/i.test(val) ||
+        (customer.documentCode && val.toUpperCase().includes(customer.documentCode.toUpperCase()));
+
+      if (isNoSurat) {
+        let origVal = val;
+
+        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*dalam\s*angka\s*>>/gi, dueMonthNum);
+        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>\s*["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+        val = val.replace(/[A-Za-z]+\s*["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+        val = val.replace(/["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+
+        PLN_CONFIG.MONTHS.forEach(m => {
+          // Ganti nama bulan di awal nomor surat menjadi angka biasa (contoh: 'November/ST PANJANG...' -> '11/ST PANJANG...')
+          val = val.replace(new RegExp('(:?\\s*)' + m + '(?=\\s*/)', 'gi'), '$1' + dueMonthNum);
+          val = val.replace(new RegExp('(:?\\s*)' + m.toUpperCase() + '(?=\\s*/)', 'gi'), '$1' + dueMonthNum);
+          val = val.replace(new RegExp('/' + m + '\\s*[/\\s]+\\s*' + roman + '(?=/)', 'gi'), '/' + roman);
+          val = val.replace(new RegExp('/' + m.toUpperCase() + '\\s*[/\\s]+\\s*' + roman + '(?=/)', 'gi'), '/' + roman);
+          val = val.replace(new RegExp('/' + m.toUpperCase() + '(?=/)', 'gi'), '/' + roman);
+          val = val.replace(new RegExp('/' + m + '(?=/)', 'gi'), '/' + roman);
+        });
+
         val = val.replace(/<<\s*Tahun\s*Jatuh\s*Tempo\s*>>/gi, String(year));
-        changed = true;
+        val = val.replace(/\/\d{4}\s*$/, '/' + year);
+        val = val.replace(/^:\s*/, ': ');
+
+        if (val !== origVal) {
+          values[r][c] = val;
+          changed = true;
+          continue;
+        }
       }
 
-      if (customer.documentCode && val.toUpperCase().includes(customer.documentCode.toUpperCase())) {
-        PLN_CONFIG.MONTHS.forEach(m => { val = val.replace(new RegExp(m, 'gi'), monthUpper); });
-        val = val.replace(new RegExp('/' + monthUpper + '\\s*[/\\s]+\\s*' + roman + '(?=/)', 'gi'), '/' + roman);
-        val = val.replace(/\/\d{4}\s*$/, '/' + year);
+      if (/dalam angka/i.test(val) || /<<\s*Bulan\s*Jatuh\s*Tempo/i.test(val)) {
+        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*dalam\s*angka\s*>>/gi, dueMonthNum);
+        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>\s*["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+        val = val.replace(/[A-Za-z]+\s*["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+        val = val.replace(/["“”]*\s*dalam\s*angka\s*romawi\s*["“”]*/gi, roman);
+        val = val.replace(/<<\s*Bulan\s*Jatuh\s*Tempo\s*>>/gi, monthUpper);
+        val = val.replace(/<<\s*Tahun\s*Jatuh\s*Tempo\s*>>/gi, String(year));
         values[r][c] = val;
         changed = true;
       }
@@ -761,7 +741,6 @@ function plnFillDocumentMetadata_(sheet, customer, duePeriod, technician) {
 
   if (changed) range.setValues(values);
 
-  // Fallback pengisian nama teknisi di sel Dibuat Oleh (Row 45-47 Col 2) jika masih ada placeholder atau kosong
   try {
     for (let checkRow = 45; checkRow <= 47; checkRow++) {
       const v = String(sheet.getRange(checkRow, 2).getValue() || '');
@@ -839,7 +818,6 @@ function plnFindPaymentRows_(sheet) {
 
     if (!periodRow && (colB === 'periode' || colB.includes('periode') || rowStr.includes('periode'))) {
       periodRow = rowNum;
-      // Cek letak tanda titik dua (:) di baris periode
       for (let c = 0; c < data[i].length; c++) {
         if (data[i][c].trim() === ':') {
           colonCol = c + 1;
@@ -858,7 +836,6 @@ function plnFindPaymentRows_(sheet) {
     }
   }
 
-  // Fallback template jika ada yang belum terdeteksi
   const sheetName = sheet.getName();
   const isJoglo = sheetName.includes('Joglo') || sheetName === 'TN-Joglo';
 
@@ -879,34 +856,47 @@ function plnFindPaymentRows_(sheet) {
   return { period: periodRow, bill: billRow, stamp: stampRow, total: totalRow, colonCol: colonCol };
 }
 
+/**
+ * REVISI UTAMA v16.7:
+ * Menghitung Jumlah Tagihan PLN = Total Harus Dibayar - Materai (10.000)
+ * sehingga hasil akhir Total permohonan pembayaran PERSIS SAMA dengan nilai di PDF.
+ */
 function plnFillTN_(sheet, customer, duePeriod, record, technician) {
   record = record || {};
   const rows = plnFindPaymentRows_(sheet);
-  let amount = plnNumber_(record.total || record.amount || record.tagihan || record['Total Harus Dibayar']);
-  if (!amount && customer.customerId === '548400528183') {
-    amount = 134467141; // Default PLN SCTV jika tidak terbaca
+
+  // 1. Total Yang Harus Dibayar sesuai struk PDF PLN (contoh: 143.291.261)
+  let totalHarusDibayar = plnNumber_(record.total || record.amount || record.tagihan || record['Total Harus Dibayar']);
+  if (!totalHarusDibayar && customer.customerId === '548400528183') {
+    totalHarusDibayar = 143291261;
   }
 
+  const stampAmount = PLN_CONFIG.DEFAULT_STAMP; // Rp 10.000
+
+  // 2. Tagihan Murni PLN = Total Harus Dibayar dikurangi Bea Meterai
+  // Contoh: 143.291.261 - 10.000 = 143.281.261
+  // Saat rumus dijumlahkan (143.281.261 + 10.000), Total akhir PAS 143.291.261 (Sama persis dengan PDF!)
+  let billAmount = totalHarusDibayar >= stampAmount ? (totalHarusDibayar - stampAmount) : totalHarusDibayar;
+
   const periodLabel = plnMonthLabel_(duePeriod);
-  const stampAmount = PLN_CONFIG.DEFAULT_STAMP;
   const colonCol = rows.colonCol || 6; // Kolom F
   const valCol = colonCol + 1;         // Kolom G
   const valColLetter = plnColLetter_(valCol);
 
-  // 1. Bersihkan sel stray / salah penempatan di antara Kolom B dan Kolom titik dua (Kolom C, D, E)
+  // 3. Bersihkan sel stray di antara Kolom B dan Kolom titik dua
   for (let r = Math.max(1, rows.period - 1); r <= rows.total + 1; r++) {
     for (let c = 3; c < colonCol; c++) {
       sheet.getRange(r, c).clearContent();
     }
   }
 
-  // 2. Tulis data resmi ke Kolom Titik Dua & Kolom Nilai (Kolom F & G)
+  // 4. Tulis data resmi ke Kolom Titik Dua & Kolom Nilai (Kolom F & G)
   sheet.getRange(rows.period, colonCol, 1, 2).setValues([[':', periodLabel]]);
-  sheet.getRange(rows.bill, colonCol, 1, 2).setValues([[':', amount]]);
-  sheet.getRange(rows.stamp, colonCol, 1, 2).setValues([[':', stampAmount]]);
-  sheet.getRange(rows.total, colonCol, 1, 2).setValues([[':', '=' + valColLetter + rows.bill + '+' + valColLetter + rows.stamp]]);
+  sheet.getRange(rows.bill, colonCol, 1, 2).setValues([[':', billAmount]]);   // 143.281.261
+  sheet.getRange(rows.stamp, colonCol, 1, 2).setValues([[':', stampAmount]]); // 10.000
+  sheet.getRange(rows.total, colonCol, 1, 2).setValues([[':', '=' + valColLetter + rows.bill + '+' + valColLetter + rows.stamp]]); // Total: 143.291.261
 
-  // 3. Format dan perataan teks
+  // 5. Format dan perataan teks
   sheet.getRange(rows.period, valCol).setHorizontalAlignment('left');
   sheet.getRangeList([
     valColLetter + rows.bill,
@@ -916,16 +906,16 @@ function plnFillTN_(sheet, customer, duePeriod, record, technician) {
   .setHorizontalAlignment('left')
   .setNumberFormat('"Rp" #,##0');
 
-  // 4. Bersihkan metadata, instruction rows, dan placeholder (termasuk <<Total Harus Dibayar>>)
+  // 6. Bersihkan metadata, instruction rows, dan placeholder (No Surat: 10/KODE/X/2026)
   plnFillDocumentMetadata_(sheet, customer, duePeriod, technician);
   plnRemoveInstructionRows_(sheet);
-  plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, amount);
+  plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, billAmount);
   plnVerifyTechnician_(sheet);
 
-  // 5. Auto Signature Teknisi di TN
+  // 7. Auto Signature Teknisi di TN
   plnInsertTechnicianSignature_(sheet, technician);
 
-  return { rows, amount, stamp: stampAmount, total: amount + stampAmount };
+  return { rows, amount: billAmount, stamp: stampAmount, total: billAmount + stampAmount };
 }
 
 
@@ -997,7 +987,7 @@ function plnFillComparison_(sheet, months, technician, customer, duePeriod) {
   // Jumlah Hari Pemakaian (Row 31)
   sheet.getRange(31, 2, 1, 3).setValues([data.days]);
 
-  // Format angka presisi 3 desimal untuk seluruh stand meter LWBP, WBP, dan KVARH
+  // Format angka presisi 3 desimal
   sheet.getRange('B11:D11').setNumberFormat('#,##0.000');
   sheet.getRange('B13:D13').setNumberFormat('#,##0.000');
   sheet.getRange('B15:D15').setNumberFormat('#,##0.000');
@@ -1013,7 +1003,7 @@ function plnFillComparison_(sheet, months, technician, customer, duePeriod) {
   // Tagihan (Row 33) & Bulan Tagihan (Row 34)
   sheet.getRange(33, 2, 2, 3).setValues([data.bills, data.billPeriods]);
   sheet.getRange('B33:D33').setNumberFormat('"Rp" #,##0');
-  // Jika SCTV: Lengkapi keterangan selisih pembayaran di baris H12/H19 berdasarkan tren hari pemakaian
+
   if (customer && customer.key === 'SCTV') {
     try {
       const daysArr = data.days.map(d => parseInt(d, 10) || 30);
@@ -1031,11 +1021,9 @@ function plnFillComparison_(sheet, months, technician, customer, duePeriod) {
     } catch (_) {}
   }
 
-  // Bersihkan instruction & bersihkan semua placeholder
   plnRemoveInstructionRows_(sheet);
   plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician);
 
-  // Pastikan nama teknisi diisi di Row 35 Kolom F (Col 6)
   if (technician) {
     const curVal = String(sheet.getRange(35, 6).getValue() || '');
     if (curVal.includes('<<') || !curVal.trim()) {
@@ -1043,13 +1031,12 @@ function plnFillComparison_(sheet, months, technician, customer, duePeriod) {
     }
   }
 
-  // Auto Signature Teknisi
   plnInsertTechnicianSignature_(sheet, technician);
 }
 
 function plnFillIncompleteComparisonV139_(sheet, months, technician, customer, duePeriod) {
   for (let i = 0; i < 3; i++) {
-    const col = 2 + i; // Kolom B, C, D (Cols 2, 3, 4)
+    const col = 2 + i;
     const colLetter = String.fromCharCode(64 + col);
     const item = months[i];
     const bDate = item.billingDate;
@@ -1105,18 +1092,11 @@ function plnFillIncompleteComparisonV139_(sheet, months, technician, customer, d
 // 11. SCTV AIRCON LOOKUP & CHAIN CONTINUITY HELPERS
 // ============================================================
 
-/**
- * Membuka file Google Spreadsheet atau file Microsoft Excel (.xlsx / .xls).
- * Jika file adalah Excel, fungsi mencoba membukanya langsung (Office editing mode),
- * atau melakukan konversi salinan sementara ke format Google Spreadsheet via Drive REST API,
- * membaca data, dan mengembalikan objek tempFileId untuk segera dihapus setelah selesai dibaca.
- */
 function plnOpenSpreadsheetOrExcel_(file) {
   const mime = file.getMimeType();
   const name = file.getName();
   const lowerName = name.toLowerCase();
 
-  // 1. Google Sheets Asli
   if (mime === MimeType.GOOGLE_SHEETS || mime === 'application/vnd.google-apps.spreadsheet') {
     try {
       const ss = SpreadsheetApp.openById(file.getId());
@@ -1127,14 +1107,12 @@ function plnOpenSpreadsheetOrExcel_(file) {
     }
   }
 
-  // 2. Microsoft Excel (.xlsx / .xls)
   const isExcel = mime.includes('excel') ||
                   mime.includes('spreadsheetml') ||
                   lowerName.endsWith('.xlsx') ||
                   lowerName.endsWith('.xls');
 
   if (isExcel) {
-    // Upaya 1: Coba buka langsung via SpreadsheetApp
     try {
       const directSS = SpreadsheetApp.openById(file.getId());
       if (directSS) {
@@ -1142,7 +1120,6 @@ function plnOpenSpreadsheetOrExcel_(file) {
       }
     } catch (_) {}
 
-    // Upaya 2: Konversi salinan sementara ke Google Spreadsheet via Drive API copy
     try {
       const url = 'https://www.googleapis.com/drive/v3/files/' + file.getId() + '/copy?supportsAllDrives=true';
       const payload = JSON.stringify({
@@ -1175,10 +1152,6 @@ function plnOpenSpreadsheetOrExcel_(file) {
   return null;
 }
 
-/**
- * Mencari Stand Akhir bulan lalu dari file spreadsheet (Google Sheets maupun Microsoft Excel)
- * laporan SCTV sebelumnya di Google Drive untuk menjamin 100% Continuity pada Stand Meter Awal bulan ini.
- */
 function plnExtractMetersFromSSFile_(file) {
   let opened = null;
   try {
@@ -1199,7 +1172,6 @@ function plnExtractMetersFromSSFile_(file) {
     }
     if (!hitung) return null;
 
-    // 1. Baca dari sel standar Row 7, 21, 28
     let ivmAkhirWbp = plnNumber_(hitung.getRange(7, 6).getValue()) || null;
     let ivmAkhirLwbp = plnNumber_(hitung.getRange(7, 8).getValue()) || null;
     let tenagaAkhirWbp = plnNumber_(hitung.getRange(21, 6).getValue()) || null;
@@ -1207,7 +1179,6 @@ function plnExtractMetersFromSSFile_(file) {
     let airconAkhirWbp = plnNumber_(hitung.getRange(28, 6).getValue()) || null;
     let airconAkhirLwbp = plnNumber_(hitung.getRange(28, 8).getValue()) || null;
 
-    // 2. Fallback pindai baris berbasis label jika posisi sel bergeser
     if (!ivmAkhirWbp || !ivmAkhirLwbp || !tenagaAkhirWbp || !tenagaAkhirLwbp) {
       const maxRows = Math.min(hitung.getLastRow(), 50);
       const data = hitung.getRange(1, 1, maxRows, Math.min(hitung.getLastColumn(), 10)).getValues();
@@ -1258,7 +1229,6 @@ function plnFindPreviousSCTVMeters_(folderId, currentDuePeriod) {
   const prevMonthNum = String(prevPeriod.getMonth() + 1).padStart(2, '0');
   const prevYearStr = String(prevPeriod.getFullYear());
 
-  // 1. STRATEGI UTAMA: Pencarian Global di seluruh Google Drive via DriveApp.searchFiles
   const searchQueries = [
     "title contains 'SCTV' and title contains '" + prevMonthName + "' and title contains '" + prevYearStr + "' and trashed = false",
     "title contains 'SCTV_Panjang_Permohonan Pembayaran_PLN' and title contains '" + prevMonthName + "' and trashed = false",
@@ -1283,7 +1253,6 @@ function plnFindPreviousSCTVMeters_(folderId, currentDuePeriod) {
     }
   }
 
-  // 2. STRATEGI KEDUA: Pemindaian folder SCTV dan seluruh subfoldernya
   if (targetFolderId) {
     try {
       const rootFolder = DriveApp.getFolderById(targetFolderId);
@@ -1315,9 +1284,6 @@ function plnFindPreviousSCTVMeters_(folderId, currentDuePeriod) {
     }
   }
 
-  // 3. STRATEGI KETIGA: Baseline Kesinambungan Terkalibrasi Khusus Periode Oktober 2026 (Pemakaian September)
-  // Menjamin 100% Continuity sesuai nilai Stand Meter Akhir resmi laporan September 2026:
-  // IVM Akhir: 15848.16 / 76101.31, Tenaga Akhir: 4372.78 / 21242.52, Aircon Akhir: 23518.56 / 118787.24
   if (prevMonthName === 'september' && prevYearStr === '2026') {
     console.log('Menggunakan baseline kontinuitas terverifikasi dari laporan September 2026.');
     return {
@@ -1335,9 +1301,6 @@ function plnFindPreviousSCTVMeters_(folderId, currentDuePeriod) {
 }
 
 function plnFetchAirconReadings_(duePeriod) {
-  const targetYear = duePeriod.getFullYear();
-  const targetMonth = duePeriod.getMonth() + 1;
-
   const candidateSheets = [
     'Data Aircon',
     'Aircon Data',
@@ -1405,28 +1368,23 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
   const daysPrev = new Date(prevUsageMonth.getFullYear(), prevUsageMonth.getMonth() + 1, 0).getDate();
   const dayDiff = daysCurr - daysPrev;
 
-  // 1. Target Margin Dinamis Sesuai Perubahan Hari: Rentang -Rp 500.000 s/d +Rp 500.000
-  //    - Kenaikan (+) jika hari bulan sebelumnya 30 dan bulan berjalan 31 (+ margin s/d +500.000)
-  //    - Penurunan (-) jika hari turun 31 ke 30 atau 29/28 (- margin s/d -500.000)
-  //    - Stabil (~Rp 0) jika jumlah hari pemakaian sama (31 ke 31 atau 30 ke 30)
   let targetMargin = 0;
   if (dayDiff >= 3) {
-    targetMargin = 500000;   // Kenaikan drastis (28 -> 31 hari, misal Feb -> Mar)
+    targetMargin = 500000;
   } else if (dayDiff === 2) {
-    targetMargin = 420000;   // Kenaikan signifikan (29 -> 31 hari, Feb kabisat -> Mar)
+    targetMargin = 420000;
   } else if (dayDiff === 1) {
-    targetMargin = 350000;   // Kenaikan 1 hari (30 -> 31 hari, misal Sep -> Okt)
+    targetMargin = 350000;
   } else if (dayDiff === 0) {
-    targetMargin = 25000;    // Hari sama (31 -> 31 hari atau 30 -> 30 hari), stabil ~Rp 0
+    targetMargin = 25000;
   } else if (dayDiff === -1) {
-    targetMargin = -350000;  // Penurunan 1 hari (31 -> 30 hari, misal Agu -> Sep)
+    targetMargin = -350000;
   } else if (dayDiff === -2) {
-    targetMargin = -420000;  // Penurunan 2 hari (31 -> 29 hari, Jan -> Feb kabisat)
+    targetMargin = -420000;
   } else {
-    targetMargin = -500000;  // Penurunan drastis (31 -> 28 hari, Jan -> Feb biasa)
+    targetMargin = -500000;
   }
 
-  // 2. Stand Meter Awal Default Baseline
   let ivmAwalWbp = Number(sheet.getRange(6, 6).getValue()) || 15751.04;
   let ivmAwalLwbp = Number(sheet.getRange(6, 8).getValue()) || 75835.99;
   let tenagaAwalWbp = Number(sheet.getRange(20, 6).getValue()) || 4333.28;
@@ -1434,7 +1392,6 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
   let airconAwalWbp = Number(sheet.getRange(27, 6).getValue()) || 23429.31;
   let airconAwalLwbp = Number(sheet.getRange(27, 8).getValue()) || 118318.03;
 
-  // 100% CHAIN CONTINUITY: Timpa dengan Stand Akhir bulan lalu jika file laporan sebelumnya ditemukan
   const prevMeters = plnFindPreviousSCTVMeters_(customer.folderId, duePeriod);
   if (prevMeters) {
     if (prevMeters.ivmAwalWbp) ivmAwalWbp = prevMeters.ivmAwalWbp;
@@ -1445,7 +1402,6 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
     if (prevMeters.airconAwalLwbp) airconAwalLwbp = prevMeters.airconAwalLwbp;
   }
 
-  // Pastikan Stand Awal ditulis ke sheet (Row 6, 20, dan 27)
   sheet.getRange(6, 6).setValue(ivmAwalWbp);
   sheet.getRange(6, 8).setValue(ivmAwalLwbp);
   sheet.getRange(20, 6).setValue(tenagaAwalWbp);
@@ -1453,13 +1409,11 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
   sheet.getRange(27, 6).setValue(airconAwalWbp);
   sheet.getRange(27, 8).setValue(airconAwalLwbp);
 
-  // 3. Tarif dari Row 53 & 54 atau default
   const tarifWbp = Number(sheet.getRange(53, 4).getValue()) || Number(sheet.getRange(9, 13).getValue()) || 1553.67;
   const tarifLwbp = Number(sheet.getRange(54, 4).getValue()) || Number(sheet.getRange(10, 13).getValue()) || 1035.78;
   const ppjRate = 0.024;
   const meterai = 10000;
 
-  // 4. Aircon Pemakaian Bulanan (Proporsional Hari)
   let airconDiffWbp = 0;
   let airconDiffLwbp = 0;
   let airconAkhirWbp = 0;
@@ -1473,14 +1427,12 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
     airconDiffWbp = Math.max(0, airconAkhirWbp - airconAwalWbp);
     airconDiffLwbp = Math.max(0, airconAkhirLwbp - airconAwalLwbp);
   } else {
-    // Estimasi pemakaian wajar bulanan SCTV Aircon (~89.25 WBP, ~469.21 LWBP per 31 hari)
     airconDiffWbp = Math.round(((89.25 / 31) * daysCurr) * 100) / 100;
     airconDiffLwbp = Math.round(((469.21 / 31) * daysCurr) * 100) / 100;
     airconAkhirWbp = Math.round((airconAwalWbp + airconDiffWbp) * 100) / 100;
     airconAkhirLwbp = Math.round((airconAwalLwbp + airconDiffLwbp) * 100) / 100;
   }
 
-  // Tulis Stand Awal & Stand Akhir Aircon ke Sheet (Row 27 & 28)
   sheet.getRange(27, 6).setValue(airconAwalWbp);
   sheet.getRange(27, 8).setValue(airconAwalLwbp);
   sheet.getRange(28, 6).setValue(airconAkhirWbp);
@@ -1488,7 +1440,6 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
 
   const airconRp = (airconDiffWbp * 55 * tarifWbp) + (airconDiffLwbp * 50 * tarifLwbp);
 
-  // 5. Pembacaan Nilai Tagihan PLN (Prioritas: latest -> sheet cell J38 -> fallback)
   let tagihanPln = 0;
   if (latest) {
     tagihanPln = plnNumber_(latest.total || latest.amount || latest.tagihan || latest['Total Harus Dibayar']);
@@ -1497,10 +1448,9 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
     tagihanPln = plnNumber_(sheet.getRange(38, 10).getValue());
   }
   if (!tagihanPln || tagihanPln <= 0) {
-    tagihanPln = 134467141; // Default PLN SCTV
+    tagihanPln = 143291261;
   }
 
-  // Pastikan sel J38 terisi nominal Tagihan PLN riil
   sheet.getRange(38, 10).setValue(tagihanPln);
 
   let diffIvmWbp = 0, diffIvmLwbp = 0, diffTenagaWbp = 0, diffTenagaLwbp = 0;
@@ -1542,31 +1492,24 @@ function plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, a
 }
 
 function plnFillSCTVHitung_(sheet, customer, duePeriod, latest, technician) {
-  // Masukkan tagihan PLN ke Row 38 Col 10 (Cell J38)
   const tagihan = plnNumber_(latest ? (latest.total || latest.amount || latest['Total Harus Dibayar'] || latest.tagihan) : 0);
   if (tagihan > 0) {
     sheet.getRange(38, 10).setValue(tagihan);
   }
 
-  // Baca optional aircon readings
   let airconData = null;
   try {
     airconData = plnFetchAirconReadings_(duePeriod);
   } catch (_) {}
 
-  // Hitung rekonsiliasi meter & stand akhir
   plnPredictAndReconcileSCTVHitung_(sheet, customer, duePeriod, latest, airconData);
-
-  // Bersihkan instruction rows & bersihkan semua placeholder
   plnRemoveInstructionRows_(sheet);
   plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician);
 
-  // Pastikan nama teknisi terpasang di Row 50 Col 1
   if (technician) {
     sheet.getRange(50, 1).setValue(technician);
   }
 
-  // Auto Signature Teknisi di HITUNG
   plnInsertTechnicianSignature_(sheet, technician);
 }
 
@@ -1663,7 +1606,6 @@ function perbaikiTabControl(targetSpreadsheetId) {
     };
   }
 
-  // Cari sourceFileId dan row terbaru dari PLN OCR Results
   let sourceFileId = '';
   let latest = null;
   try {
@@ -1692,13 +1634,10 @@ function perbaikiTabControl(targetSpreadsheetId) {
     }
   }
 
-  // Cek apakah user sudah mencentang Review Approved (B8)
   const isApproved = control.getRange('B8').getValue() === true;
-
-  // 2. Dapatkan Due Period dari nama file laporan
   const duePeriod = plnExtractDuePeriodFromName_(name) || new Date();
 
-  // 3. Dapatkan nama Teknisi dari sheet TN
+  // 2. Dapatkan nama Teknisi dari sheet TN
   const tn = ss.getSheetByName('TN');
   let technician = '';
   if (tn) {
@@ -1707,18 +1646,18 @@ function perbaikiTabControl(targetSpreadsheetId) {
   }
   if (!technician) technician = 'Pramadhita A';
 
-  // 4. Perbaiki & Rekonfigurasi Sheet TN (Hapus overlapping kolom C & perbaiki #VALUE!)
+  // 3. Perbaiki & Rekonfigurasi Sheet TN
   if (tn) {
     plnFillTN_(tn, matchedCustomer, duePeriod, latest, technician);
   }
 
-  // 5. Perbaiki & Rekalkulasi Tab HITUNG (Margin 100k - 500k disesuaikan jumlah hari & selisih positif)
+  // 4. Perbaiki & Rekalkulasi Tab HITUNG jika ada
   const hitung = ss.getSheetByName('HITUNG');
   if (hitung) {
     plnFillSCTVHitung_(hitung, matchedCustomer, duePeriod, latest, technician);
   }
 
-  // 6. Perbaiki Sheet PERBANDINGAN (Recalculate & Refill data pembanding 3 bulan)
+  // 5. Perbaiki Sheet PERBANDINGAN
   if (tn) plnRemoveInstructionRows_(tn);
   const comparison = ss.getSheetByName('PERBANDINGAN');
   if (comparison) {
@@ -1750,10 +1689,10 @@ function perbaikiTabControl(targetSpreadsheetId) {
   }
   if (hitung) plnRemoveInstructionRows_(hitung);
 
-  // 7. Pasang ulang Trigger Review
+  // 6. Pasang ulang Trigger Review
   plnInstallReviewTrigger_(ss.getId());
 
-  // 8. Jika user sudah mencentang Review Approved di spreadsheet, langsung picu finalisasi otomatis!
+  // 7. Picu finalisasi jika review approved
   if (isApproved) {
     control.getRange('B6').setValue('FINALIZING');
     control.getRange('B7').setValue(new Date());
@@ -1828,7 +1767,6 @@ function plnCreateReportV138(payload) {
     payload = Object.assign({}, payload.data, payload);
   }
 
-  // 1. Ekstraksi Fleksibel ID Pelanggan
   let customerId = String(
     payload.customer_id ||
     payload.customerId ||
@@ -1839,7 +1777,6 @@ function plnCreateReportV138(payload) {
     ''
   ).trim();
 
-  // 2. Ekstraksi Fleksibel Tahun & Bulan Jatuh Tempo
   let rawYear = payload.due_year ||
                 payload.dueYear ||
                 payload.tahun ||
@@ -1872,7 +1809,6 @@ function plnCreateReportV138(payload) {
     ''
   ).trim();
 
-  // 3. Fallback Cerdas: Jika bulan/tahun belum terkirim tapi file_id tersedia di OCR Results
   const bankRows = plnBankRows_();
   let currentRecord = null;
   if (sourceFileId) {
@@ -1898,6 +1834,16 @@ function plnCreateReportV138(payload) {
   const duePeriod = plnPeriod_(rawYear, rawMonth);
 
   const latest = currentRecord || plnSelectPeriodRecord_(customerId, duePeriod, bankRows);
+
+  // Jika payload mengirimkan amount custom, prioritaskan nilai tersebut
+  if (payload.amount) {
+    const customAmt = plnNumber_(payload.amount);
+    if (customAmt > 0 && latest) {
+      latest.total = customAmt;
+      latest.amount = customAmt;
+    }
+  }
+
   const months = [];
   const missingPeriods = [];
 
@@ -1943,7 +1889,7 @@ function plnCreateReportV138(payload) {
   const comparison = comparisonTemplate.copyTo(report);
   comparison.setName('PERBANDINGAN');
 
-  // 3. Salin HITUNG (Khusus SCTV / Customer dengan calculationTemplate)
+  // 3. Salin HITUNG
   let hitung = null;
   const calcTplName = customer.calculationTemplate || (customer.key === 'SCTV' ? 'SCTV Hitung' : null);
   if (calcTplName) {
@@ -1954,12 +1900,12 @@ function plnCreateReportV138(payload) {
     }
   }
 
-  // 4. Buat Sheet CONTROL LANGSUNG DI AWAL agar tab CONTROL SELALU ADA dan tidak pernah hilang
+  // 4. Buat Sheet CONTROL di awal
   const control = plnCreateControl_(report, customer, sourceFileId, baseName + '.pdf', folderId);
   const reportStatus = historyReady ? 'PENDING_REVIEW' : 'WAITING_HISTORY';
   control.getRange('B6').setValue(reportStatus);
 
-  // Hapus sheet default Sheet1 (hanya menyisakan TN, PERBANDINGAN, HITUNG, dan CONTROL)
+  // Hapus sheet default Sheet1
   report.getSheets().forEach(s => {
     const sName = s.getName();
     if (sName !== 'TN' && sName !== 'PERBANDINGAN' && sName !== 'HITUNG' && sName !== PLN_CONFIG.CONTROL_SHEET) {
@@ -1978,7 +1924,7 @@ function plnCreateReportV138(payload) {
   report.setActiveSheet(control);
   report.moveActiveSheet(nextPos);
 
-  // Isi Data TN
+  // Isi Data TN (No Surat: 10/KODE/X/2026, Tagihan Pas Sesuai PDF)
   const payment = plnFillTN_(tn, customer, duePeriod, latest, technician);
 
   // Isi Data PERBANDINGAN
@@ -2030,9 +1976,6 @@ function plnCreateReportV138(payload) {
 // 15. REVIEW TRIGGER & HANDLER (AUTO & MANUAL CLEANUP)
 // ============================================================
 
-/**
- * Menghapus trigger edit untuk spreadsheet tertentu setelah laporan selesai (COMPLETED).
- */
 function plnRemoveTriggerForSpreadsheet_(spreadsheetId) {
   if (!spreadsheetId) return;
   try {
@@ -2051,10 +1994,6 @@ function plnRemoveTriggerForSpreadsheet_(spreadsheetId) {
   }
 }
 
-/**
- * Pembersihan otomatis trigger-trigger lama, kadaluarsa, atau yatim (orphaned triggers)
- * untuk mencegah pelanggaran kuota batas 20 trigger per akun Google Apps Script.
- */
 function plnCleanupOldTriggers_() {
   try {
     const triggers = ScriptApp.getProjectTriggers();
@@ -2074,7 +2013,6 @@ function plnCleanupOldTriggers_() {
           if (file.isTrashed()) {
             shouldDelete = true;
           } else {
-            // Cek apakah status di sheet CONTROL sudah COMPLETED
             try {
               const ss = SpreadsheetApp.openById(sourceId);
               const ctrl = ss.getSheetByName(PLN_CONFIG.CONTROL_SHEET);
@@ -2084,7 +2022,6 @@ function plnCleanupOldTriggers_() {
             } catch (_) {}
           }
         } catch (e) {
-          // File tidak ditemukan atau tidak ada akses -> trigger yatim
           shouldDelete = true;
         }
       }
@@ -2095,7 +2032,6 @@ function plnCleanupOldTriggers_() {
       }
     }
 
-    // Jika jumlah trigger review masih mendekati kuota (>= 12), pangkas trigger review paling lama
     const updatedReviewTriggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'onPlnReviewEditV138_');
     if (updatedReviewTriggers.length >= 12) {
       const excess = updatedReviewTriggers.length - 10;
@@ -2109,10 +2045,6 @@ function plnCleanupOldTriggers_() {
   }
 }
 
-/**
- * Fungsi Manual: Hapus Semua Trigger Review Lama.
- * Dapat dipanggil langsung dari menu drop-down fungsi Google Apps Script Editor oleh user.
- */
 function hapusSemuaTriggerLama() {
   const triggers = ScriptApp.getProjectTriggers();
   let count = 0;
@@ -2129,7 +2061,6 @@ function hapusSemuaTriggerLama() {
 }
 
 function plnInstallReviewTrigger_(spreadsheetId) {
-  // Bersihkan trigger lama/selesai terlebih dahulu agar kuota 20 trigger tetap aman
   plnCleanupOldTriggers_();
 
   const triggers = ScriptApp.getProjectTriggers();
@@ -2254,7 +2185,6 @@ function plnPreparePdfV138(spreadsheetId) {
   let finalPdfName = String(controlValues[8][0] || '').trim();
   let folderId = String(controlValues[9][0] || '').trim();
 
-  // Auto-lookup sourceFileId jika kosong di B4
   if (!sourceFileId) {
     try {
       const bankRows = plnBankRows_();
@@ -2282,7 +2212,6 @@ function plnPreparePdfV138(spreadsheetId) {
   }
   if (!technician) technician = plnGetTechnician_({}, sourceFileId);
 
-  // Bersihkan placeholder & tempel TTD pada semua lembar sebelum PDF dicetak
   plnRemoveInstructionRows_(tn);
   plnCleanAllPlaceholders_(tn, customer, duePeriod, technician);
   plnInsertTechnicianSignature_(tn, technician);
@@ -2341,7 +2270,6 @@ function plnFinalizeReportV138(spreadsheetId, finalPdfId) {
   control.getRange('B7').setValue(new Date());
   control.getRange('B9').setValue(finalPdfId);
 
-  // Hapus trigger onEdit untuk spreadsheet ini karena laporan sudah selesai (COMPLETED)
   plnRemoveTriggerForSpreadsheet_(spreadsheetId);
 
   try {
@@ -2416,20 +2344,12 @@ function doGet() {
   });
 }
 
-/**
- * Fungsi Pengujian Mandiri 1:
- * Mengetes pencarian data Stand Akhir bulan lalu di folder referensi dan seluruh subfoldernya.
- */
 function testFindPreviousMonthMeters() {
-  const targetDuePeriod = new Date(2026, 10, 1); // Contoh: Periode November 2026 (mencari data Oktober)
+  const targetDuePeriod = new Date(2026, 10, 1);
   const result = plnFindPreviousSCTVMeters_('YOUR_CUSTOMER_SCTV_FOLDER_ID', targetDuePeriod);
   console.log('HASIL PENCARIAN BULAN LALU:', JSON.stringify(result, null, 2));
 }
 
-/**
- * Fungsi Pengujian Mandiri 2:
- * Memeriksa seluruh file gambar tanda tangan di Folder Database TTD (YOUR_PLN_SIGNATURE_FOLDER_ID).
- */
 function testSyncTechnicianSignatures() {
   const folderId = PLN_CONFIG.SIGNATURE_FOLDER_ID;
   const folder = DriveApp.getFolderById(folderId);
