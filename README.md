@@ -100,6 +100,16 @@ flowchart TD
 * **Multi-Criteria Gmail Archival Engine (`05-gmail-automation/email_sorting_engine.js`)**:
   * Implements query exclusion generators and execution time guards (`MAX_EXEC_TIME_MS = 240000`) to organize, label, and archive hundreds of daily system dispatches.
 
+### 6. 📊 High-Speed Telemetry Multi-Template Excel Backup Engine (`n8n-workflows/08-telemetry-excel-multitemplate-backup.json` & `apps-script/01-master-metering/telemetry_excel_multitemplate_backup.js`)
+* **Sub-Second Payload Dispatch (<0.3s)**: Eliminates Google Apps Script 360-second execution timeouts on massive workbooks (>30 MB, 40+ tabs) by extracting display values directly into memory and dispatching JSON payloads to n8n asynchronously (`responseMode: onReceived`).
+* **Visual Switch Dynamic Routing**: Evaluates report metadata (`reportType: DAILY | WEEKLY | MONTHLY`) and routes data to isolated, pre-formatted Google Drive master templates:
+  * **Daily (Harian)**: 28 columns (00:00 to 22:00 readings), 3,494 merged cells.
+  * **Weekly (Mingguan)**: 18 columns (7 days + Average), 2,312 merged cells (zero leftover daily time columns).
+  * **Monthly (Bulanan)**: 14 columns (Weeks 1 to 5 + Average), 1,845 merged cells.
+* **100% Visual & Formatting Fidelity**: Injects values into cloned single-sheet templates and exports genuine `.xlsx` files preserving exact font metrics, background fills, borders, and complex merged cell structures.
+* **Parallel Dual-Drive Storage & Auto-Purge**: Simultaneously uploads exported `.xlsx` files to two distinct Google Drive backup directories in parallel, then permanently purges the temporary cloned Google Spreadsheet via Drive API (`HTTP 204 No Content`).
+* **Automated Triggers**: Includes time-driven triggers for Daily T-1 (08:00 WIB), Weekly (Monday 08:00 WIB), and Monthly (Day 1 01:00 WIB).
+
 ---
 
 ## 📁 Repository Structure
@@ -121,13 +131,14 @@ telemetry-workflow-automation/
 │   ├── 04-pln-bill-ocr-extractor.json         # Multimodal PLN billing OCR & auto-recap workflow
 │   ├── 05-pln-gemini-ocr-sheet-builder.json   # Multi-customer PLN Gemini OCR & auto report builder
 │   ├── 06-pln-finalize-pdf-cloudconvert.json  # CloudConvert 3-PDF merger variant
-│   ├── 07-pln-finalize-pdf-local-pdflib.json  # Local pdf-lib 3-PDF merger (v14.6)
-│   └── 07-pln-finalize-pdf-local-pdflib.json # Local pdf-lib 4-PDF merger with Auto Hitung (v16.0)
+│   ├── 07-pln-finalize-pdf-local-pdflib.json  # Local pdf-lib 4-PDF merger with Auto Hitung (v16.0)
+│   └── 08-telemetry-excel-multitemplate-backup.json # High-speed multi-template Excel backup engine
 │
 ├── apps-script/                               # Google Apps Script enterprise modules
 │   ├── 01-master-metering/
 │   │   ├── anomaly_detection.js               # Z-Score outlier & missing cell scanner
-│   │   └── fast_backup_engine.js              # High-speed in-memory retention engine
+│   │   ├── fast_backup_engine.js              # High-speed in-memory retention engine
+│   │   └── telemetry_excel_multitemplate_backup.js # Multi-template fast Excel backup & cron triggers
 │   ├── 02-report-generators/
 │   │   ├── baseline_pdf_generator.js          # Incremental pointer-based PDF report generator
 │   │   ├── pln_auto_report_v14_engine.js      # Multi-customer PLN auto report v14.8

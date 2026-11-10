@@ -1,0 +1,334 @@
+{
+  "name": "Telemetry Excel Multi-Template Backup Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "backup-excel-sheet",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook Penerima Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "backup-excel-sheet"
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.body.reportType }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "WEEKLY",
+              "output": 0
+            },
+            {
+              "value2": "MONTHLY",
+              "output": 1
+            }
+          ]
+        },
+        "fallbackOutput": 2
+      },
+      "id": "node-switch",
+      "name": "Switch Tipe Laporan",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "name": "={{ '_TEMP_' + ($('Webhook Penerima Data').item.json.body.fileName || 'backup.xlsx') }}",
+        "options": {}
+      },
+      "id": "node-copy-weekly",
+      "name": "Template Mingguan 18 Kolom",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [720, 140],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "name": "={{ '_TEMP_' + ($('Webhook Penerima Data').item.json.body.fileName || 'backup.xlsx') }}",
+        "options": {}
+      },
+      "id": "node-copy-monthly",
+      "name": "Template Bulanan 14 Kolom",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [720, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "YOUR_DAILY_TEMPLATE_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "name": "={{ '_TEMP_' + ($('Webhook Penerima Data').item.json.body.fileName || 'backup.xlsx') }}",
+        "options": {}
+      },
+      "id": "node-copy-daily",
+      "name": "Template Harian 28 Kolom",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [720, 460],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $json.id + '/values/TEMPLATE!A1?valueInputOption=RAW' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: $('Webhook Penerima Data').item.json.body.tableData }) }}",
+        "options": {}
+      },
+      "id": "node-write-values",
+      "name": "Suntik Data Nilai ke Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://docs.google.com/spreadsheets/d/' + ($json.spreadsheetId || $json.id) + '/export?format=xlsx' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "responseFormat": "file",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "node-download-xlsx",
+      "name": "Render File Excel Asli",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1220, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "fileContent": "data",
+        "name": "={{ $('Webhook Penerima Data').item.json.body.fileName || 'Laporan.xlsx' }}",
+        "options": {
+          "parentFolder": {
+            "__rl": true,
+            "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_1",
+            "mode": "id"
+          },
+          "parents": [
+            "YOUR_GOOGLE_DRIVE_FOLDER_ID_1"
+          ]
+        }
+      },
+      "id": "node-upload-drive-1",
+      "name": "Simpan ke Folder Drive 1",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1480, 200],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "fileContent": "data",
+        "name": "={{ $('Webhook Penerima Data').item.json.body.fileName || 'Laporan.xlsx' }}",
+        "options": {
+          "parentFolder": {
+            "__rl": true,
+            "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_2",
+            "mode": "id"
+          },
+          "parents": [
+            "YOUR_GOOGLE_DRIVE_FOLDER_ID_2"
+          ]
+        }
+      },
+      "id": "node-upload-drive-2",
+      "name": "Simpan ke Folder Drive 2",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1480, 420],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + ($('Suntik Data Nilai ke Template').first().json.spreadsheetId || $('Suntik Data Nilai ke Template').first().json.id) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {}
+      },
+      "id": "node-delete-temp",
+      "name": "Bersihkan File Temp dari Drive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 200],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Penerima Data": {
+      "main": [
+        [
+          {
+            "node": "Switch Tipe Laporan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Tipe Laporan": {
+      "main": [
+        [
+          {
+            "node": "Template Mingguan 18 Kolom",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Template Bulanan 14 Kolom",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Template Harian 28 Kolom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Template Mingguan 18 Kolom": {
+      "main": [
+        [
+          {
+            "node": "Suntik Data Nilai ke Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Template Bulanan 14 Kolom": {
+      "main": [
+        [
+          {
+            "node": "Suntik Data Nilai ke Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Template Harian 28 Kolom": {
+      "main": [
+        [
+          {
+            "node": "Suntik Data Nilai ke Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Suntik Data Nilai ke Template": {
+      "main": [
+        [
+          {
+            "node": "Render File Excel Asli",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render File Excel Asli": {
+      "main": [
+        [
+          {
+            "node": "Simpan ke Folder Drive 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Simpan ke Folder Drive 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simpan ke Folder Drive 1": {
+      "main": [
+        [
+          {
+            "node": "Bersihkan File Temp dari Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
