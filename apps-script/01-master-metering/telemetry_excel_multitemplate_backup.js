@@ -259,76 +259,23 @@ function menuBackupMonthly() {
 }
 
 // ============================================================================
-// 5. JADWAL OTOMATIS (TIME-DRIVEN TRIGGERS)
+// 5. MANAJEMEN TRIGGER & OTOMASI
+// Catatan Arsitektur:
+// Untuk workbook masif (>30 MB), pemicu terjadwal otomatis (Schedule Trigger)
+// dijalankan langsung oleh n8n (Cron: Harian 05:00, Mingguan Minggu 06:00, Bulanan Tgl 7 07:00)
+// untuk mengeliminasi timeout eksekusi 360s Google Apps Script.
 // ============================================================================
 
-function scheduledDaily() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
-  const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const sheet = findDailySheetByDate(yesterday, ss);
-  if (!sheet) return;
-
-  sendSheetToN8n(sheet, "DAILY");
-}
-
-function scheduledWeekly() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
-  const now = new Date();
-  const sheet = findLastCompletedWeeklySheet(now, ss);
-  if (!sheet) return;
-
-  sendSheetToN8n(sheet, "WEEKLY");
-}
-
-function scheduledMonthly() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
-  const now = new Date();
-  const sheet = findTargetMonthlySheet(now, ss);
-  if (!sheet) return;
-
-  sendSheetToN8n(sheet, "MONTHLY");
-}
-
-function setupAutomaticTriggers() {
+/**
+ * Menghapus seluruh trigger Time-driven di Google Apps Script
+ * agar jadwal sepenuhnya dikelola oleh n8n (bebas timeout).
+ */
+function hapusSemuaTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
     ScriptApp.deleteTrigger(triggers[i]);
   }
-
-  // 1. Harian: Setiap hari jam 08:00 WIB
-  ScriptApp.newTrigger("scheduledDaily")
-    .timeBased()
-    .everyDays(1)
-    .atHour(8)
-    .inTimezone(TIMEZONE)
-    .create();
-
-  // 2. Mingguan: Setiap Senin jam 08:00 WIB
-  ScriptApp.newTrigger("scheduledWeekly")
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.MONDAY)
-    .atHour(8)
-    .inTimezone(TIMEZONE)
-    .create();
-
-  // 3. Bulanan: Setiap tanggal 1 jam 01:00 WIB
-  ScriptApp.newTrigger("scheduledMonthly")
-    .timeBased()
-    .onMonthDay(1)
-    .atHour(1)
-    .inTimezone(TIMEZONE)
-    .create();
-
-  try {
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      "1. Harian: Jam 08:00 WIB (Kemarin)\n2. Mingguan: Senin jam 08:00 WIB (Minggu Lalu)\n3. Bulanan: Tgl 1 jam 01:00 WIB (Bulan Lalu)",
-      "✅ Jadwal Otomatis Berhasil Dipasang!",
-      10
-    );
-  } catch (e) {
-    console.log("Triggers created successfully.");
-  }
+  Logger.log("✅ Semua trigger berhasil dibersihkan dari Apps Script.");
 }
 
 // ============================================================================

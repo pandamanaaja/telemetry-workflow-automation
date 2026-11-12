@@ -1,5 +1,5 @@
 {
-  "name": "Telemetry Excel Multi-Template Backup Engine",
+  "name": "Telemetry Multi-Template Scheduled & Manual Backup Engine",
   "nodes": [
     {
       "parameters": {
@@ -8,36 +8,273 @@
         "responseMode": "onReceived",
         "options": {}
       },
-      "id": "node-webhook",
-      "name": "Webhook Penerima Data",
+      "id": "n-webhook",
+      "name": "Webhook Penerima Data (Menu Manual)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 300],
+      "position": [
+        0,
+        600
+      ],
       "webhookId": "backup-excel-sheet"
     },
     {
       "parameters": {
-        "dataType": "string",
-        "value1": "={{ $json.body.reportType }}",
-        "rules": {
-          "rules": [
+        "rule": {
+          "interval": [
             {
-              "value2": "WEEKLY",
-              "output": 0
+              "field": "cronExpression",
+              "expression": "0 5 * * *"
+            }
+          ]
+        }
+      },
+      "id": "n-sch-daily",
+      "name": "Jadwal Harian 05:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "n-sch-weekly",
+      "name": "Jadwal Mingguan Minggu 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 7 * *"
+            }
+          ]
+        }
+      },
+      "id": "n-sch-monthly",
+      "name": "Jadwal Bulanan Tgl 7 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reportType: 'DAILY' } }];"
+      },
+      "id": "n-tipe-d",
+      "name": "Tipe Harian",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reportType: 'WEEKLY' } }];"
+      },
+      "id": "n-tipe-w",
+      "name": "Tipe Mingguan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reportType: 'MONTHLY' } }];"
+      },
+      "id": "n-tipe-m",
+      "name": "Tipe Bulanan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_SPREADSHEET_ID?fields=sheets.properties.title",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "n-list",
+      "name": "Ambil Daftar Nama Sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';\nconst TEMPLATES = {\"DAILY\":\"YOUR_DAILY_TEMPLATE_SPREADSHEET_ID\",\"WEEKLY\":\"YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY\":\"YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID\"};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nlet reportType;\nfor (const n of ['Tipe Harian', 'Tipe Mingguan', 'Tipe Bulanan']) {\n  try {\n    const it = $(n).first();\n    if (it) { reportType = it.json.reportType; break; }\n  } catch (e) {}\n}\nif (!reportType) throw new Error('Tipe laporan tidak terdeteksi');\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [d + '/' + m + '/' + yr, pad(d) + '/' + pad(m) + '/' + yr, d + '-' + m + '-' + yr].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n} else if (reportType === 'MONTHLY') {\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const target = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  sheetName = titles.find(t => low(t) === target) || null;\n} else {\n  // Jalan hari Minggu 06:00 -> backup pekan Minggu-Sabtu yang baru selesai (berakhir kemarin = Sabtu)\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const refs = [sat, sun];\n  const seen = [];\n  for (const r of refs) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = [ '/' + m + '/' + yr, '-' + m + '-' + yr ];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\nif (!sheetName) throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\\\/:*?\"<>|]/g, '-').trim();\nreturn [{ json: {\n  spreadsheetId: SPREADSHEET_ID,\n  sheetName,\n  reportType,\n  templateId: TEMPLATES[reportType],\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
+      },
+      "id": "n-pick",
+      "name": "Tentukan Nama Sheet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $json.spreadsheetId + '/values/' + encodeURIComponent(\"'\" + $json.sheetName + \"'\") + '?valueRenderOption=FORMATTED_VALUE' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "n-values",
+      "name": "Ambil Data Sheet Target",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nif (j.body && j.body.tableData) {\n  return [{ json: j }];\n}\nconst t = $('Tentukan Nama Sheet').first().json;\nif (!j.values || j.values.length === 0) {\n  throw new Error('Sheet ' + t.sheetName + ' kosong, backup dibatalkan');\n}\nreturn [{ json: { body: {\n  spreadsheetId: t.spreadsheetId,\n  sheetName: t.sheetName,\n  reportType: t.reportType,\n  templateId: t.templateId,\n  fileName: t.fileName,\n  tableData: j.values || []\n} } }];"
+      },
+      "id": "n-norm",
+      "name": "Normalisasi Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "r-w",
+                    "leftValue": "={{ $json.body.reportType }}",
+                    "rightValue": "WEEKLY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": false
             },
             {
-              "value2": "MONTHLY",
-              "output": 1
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "r-m",
+                    "leftValue": "={{ $json.body.reportType }}",
+                    "rightValue": "MONTHLY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": false
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "r-d",
+                    "leftValue": "={{ $json.body.reportType }}",
+                    "rightValue": "DAILY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": false
             }
           ]
         },
-        "fallbackOutput": 2
+        "options": {}
       },
-      "id": "node-switch",
+      "id": "n-switch",
       "name": "Switch Tipe Laporan",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [440, 300]
+      "position": [
+        1360,
+        400
+      ]
     },
     {
       "parameters": {
@@ -47,17 +284,21 @@
           "value": "YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID",
           "mode": "id"
         },
-        "name": "={{ '_TEMP_' + ($('Webhook Penerima Data').item.json.body.fileName || 'backup.xlsx') }}",
+        "name": "={{ '_TEMP_' + $('Normalisasi Input').first().json.body.fileName }}",
         "options": {}
       },
-      "id": "node-copy-weekly",
+      "id": "n-cp-w",
       "name": "Template Mingguan 18 Kolom",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [720, 140],
+      "position": [
+        1500,
+        240
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
@@ -69,17 +310,21 @@
           "value": "YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID",
           "mode": "id"
         },
-        "name": "={{ '_TEMP_' + ($('Webhook Penerima Data').item.json.body.fileName || 'backup.xlsx') }}",
+        "name": "={{ '_TEMP_' + $('Normalisasi Input').first().json.body.fileName }}",
         "options": {}
       },
-      "id": "node-copy-monthly",
+      "id": "n-cp-m",
       "name": "Template Bulanan 14 Kolom",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [720, 300],
+      "position": [
+        1500,
+        400
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
@@ -91,17 +336,21 @@
           "value": "YOUR_DAILY_TEMPLATE_SPREADSHEET_ID",
           "mode": "id"
         },
-        "name": "={{ '_TEMP_' + ($('Webhook Penerima Data').item.json.body.fileName || 'backup.xlsx') }}",
+        "name": "={{ '_TEMP_' + $('Normalisasi Input').first().json.body.fileName }}",
         "options": {}
       },
-      "id": "node-copy-daily",
+      "id": "n-cp-d",
       "name": "Template Harian 28 Kolom",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [720, 460],
+      "position": [
+        1500,
+        560
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
@@ -113,117 +362,252 @@
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ values: $('Webhook Penerima Data').item.json.body.tableData }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ values: $('Normalisasi Input').first().json.body.tableData }) }}",
+        "options": {
+          "timeout": 120000
+        }
       },
-      "id": "node-write-values",
+      "id": "n-put",
       "name": "Suntik Data Nilai ke Template",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [980, 300],
+      "position": [
+        1760,
+        400
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'https://docs.google.com/spreadsheets/d/' + ($json.spreadsheetId || $json.id) + '/export?format=xlsx' }}",
+        "url": "={{ 'https://docs.google.com/spreadsheets/d/' + $json.spreadsheetId + '/export?format=xlsx' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
-        "responseFormat": "file",
-        "dataPropertyName": "data",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 180000
+        }
       },
-      "id": "node-download-xlsx",
+      "id": "n-export",
       "name": "Render File Excel Asli",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1220, 300],
+      "position": [
+        2040,
+        400
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
     {
       "parameters": {
-        "operation": "upload",
-        "fileContent": "data",
-        "name": "={{ $('Webhook Penerima Data').item.json.body.fileName || 'Laporan.xlsx' }}",
-        "options": {
-          "parentFolder": {
-            "__rl": true,
-            "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_1",
-            "mode": "id"
-          },
-          "parents": [
-            "YOUR_GOOGLE_DRIVE_FOLDER_ID_1"
-          ]
-        }
+        "name": "={{ $('Normalisasi Input').first().json.body.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_1",
+          "mode": "id"
+        },
+        "options": {}
       },
-      "id": "node-upload-drive-1",
+      "id": "n-up1",
       "name": "Simpan ke Folder Drive 1",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [1480, 200],
+      "position": [
+        2500,
+        300
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
     {
       "parameters": {
-        "operation": "upload",
-        "fileContent": "data",
-        "name": "={{ $('Webhook Penerima Data').item.json.body.fileName || 'Laporan.xlsx' }}",
-        "options": {
-          "parentFolder": {
-            "__rl": true,
-            "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_2",
-            "mode": "id"
-          },
-          "parents": [
-            "YOUR_GOOGLE_DRIVE_FOLDER_ID_2"
-          ]
-        }
+        "name": "={{ $('Normalisasi Input').first().json.body.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_2",
+          "mode": "id"
+        },
+        "options": {}
       },
-      "id": "node-upload-drive-2",
+      "id": "n-up2",
       "name": "Simpan ke Folder Drive 2",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [1480, 420],
+      "position": [
+        2500,
+        500
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     },
     {
       "parameters": {
         "method": "DELETE",
-        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + ($('Suntik Data Nilai ke Template').first().json.spreadsheetId || $('Suntik Data Nilai ke Template').first().json.id) }}",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $('Suntik Data Nilai ke Template').first().json.spreadsheetId }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
         "options": {}
       },
-      "id": "node-delete-temp",
+      "id": "n-del",
       "name": "Bersihkan File Temp dari Drive",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1740, 200],
+      "position": [
+        2780,
+        400
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "name": "YOUR_GOOGLE_DRIVE_CREDENTIAL_NAME"
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
     }
   ],
   "connections": {
-    "Webhook Penerima Data": {
+    "Webhook Penerima Data (Menu Manual)": {
+      "main": [
+        [
+          {
+            "node": "Normalisasi Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jadwal Harian 05:00": {
+      "main": [
+        [
+          {
+            "node": "Tipe Harian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jadwal Mingguan Minggu 06:00": {
+      "main": [
+        [
+          {
+            "node": "Tipe Mingguan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jadwal Bulanan Tgl 7 07:00": {
+      "main": [
+        [
+          {
+            "node": "Tipe Bulanan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipe Harian": {
+      "main": [
+        [
+          {
+            "node": "Ambil Daftar Nama Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipe Mingguan": {
+      "main": [
+        [
+          {
+            "node": "Ambil Daftar Nama Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipe Bulanan": {
+      "main": [
+        [
+          {
+            "node": "Ambil Daftar Nama Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Daftar Nama Sheet": {
+      "main": [
+        [
+          {
+            "node": "Tentukan Nama Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tentukan Nama Sheet": {
+      "main": [
+        [
+          {
+            "node": "Ambil Data Sheet Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Data Sheet Target": {
+      "main": [
+        [
+          {
+            "node": "Normalisasi Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalisasi Input": {
       "main": [
         [
           {
@@ -315,13 +699,7 @@
             "node": "Simpan ke Folder Drive 2",
             "type": "main",
             "index": 0
-          }
-        ]
-      ]
-    },
-    "Simpan ke Folder Drive 1": {
-      "main": [
-        [
+          },
           {
             "node": "Bersihkan File Temp dari Drive",
             "type": "main",
@@ -330,5 +708,9 @@
         ]
       ]
     }
+  },
+  "settings": {
+    "timezone": "Asia/Jakarta",
+    "executionOrder": "v1"
   }
 }

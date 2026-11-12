@@ -108,7 +108,7 @@ flowchart TD
   * **Monthly (Bulanan)**: 14 columns (Weeks 1 to 5 + Average), 1,845 merged cells.
 * **100% Visual & Formatting Fidelity**: Injects values into cloned single-sheet templates and exports genuine `.xlsx` files preserving exact font metrics, background fills, borders, and complex merged cell structures.
 * **Parallel Dual-Drive Storage & Auto-Purge**: Simultaneously uploads exported `.xlsx` files to two distinct Google Drive backup directories in parallel, then permanently purges the temporary cloned Google Spreadsheet via Drive API (`HTTP 204 No Content`).
-* **Automated Triggers**: Includes time-driven triggers for Daily T-1 (08:00 WIB), Weekly (Monday 08:00 WIB), and Monthly (Day 1 01:00 WIB).
+* **Automated Schedule Triggers in n8n**: Offloads automated scheduling from Apps Script to n8n Schedule Triggers (Daily at 05:00 WIB, Weekly on Sunday at 06:00 WIB, Monthly on 7th at 07:00 WIB) with direct Google Sheets REST API ingestion (0.3s), completely eliminating 360-second headless execution timeouts on 30MB+ spreadsheets while keeping the Google Sheets UI menu for on-demand manual triggers.
 
 ---
 
