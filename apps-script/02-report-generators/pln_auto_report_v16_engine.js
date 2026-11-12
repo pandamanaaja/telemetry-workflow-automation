@@ -76,8 +76,8 @@ const PLN_CONFIG = {
     'Agus Triyono',
     'Imam Baihaqi',
     'Waryo',
-    'Pramadhita A',
-    'Pramadhita',
+    'Lead Field Engineer',
+    'Lead Field Engineer',
     'Bambang W',
     'Dwi Widyanto',
     'Satrio P',
@@ -103,9 +103,9 @@ const PLN_CONFIG = {
 
 const PLN_CUSTOMERS = {
 
-  '543104053078': {
+  '543100000001': {
     key: 'JOGLO',
-    name: 'INDOSIAR VISUAL M PT',
+    name: 'Broadcaster Client A (TV Network)',
     folderId: 'YOUR_CUSTOMER_JOGLO_FOLDER_ID',
     paymentTemplate: 'TN-Joglo',
     comparisonTemplate: 'TN-Joglo A',
@@ -113,9 +113,9 @@ const PLN_CUSTOMERS = {
     documentCode: 'ST.JOGLO-PLN-IVM'
   },
 
-  '543103684326': {
+  '543100000003': {
     key: 'MUSTOFA',
-    name: 'H MUSTOFA',
+    name: 'Commercial Partner C',
     folderId: 'YOUR_CUSTOMER_MUSTOFA_FOLDER_ID',
     paymentTemplate: 'TN-1',
     comparisonTemplate: 'TN-1 A',
@@ -123,9 +123,9 @@ const PLN_CUSTOMERS = {
     documentCode: 'ST PANJANG-PLN-IVM'
   },
 
-  '548400528183': {
+  '543100000002': {
     key: 'SCTV',
-    name: 'PT. SCTV',
+    name: 'Broadcaster Client B (National Broadcast)',
     folderId: 'YOUR_CUSTOMER_SCTV_FOLDER_ID',
     paymentTemplate: 'TN-SCTV',
     comparisonTemplate: 'TN-SCTV A',
@@ -356,7 +356,7 @@ function plnGetTechnician_(payload, sourceFileId) {
   }
 
   if (!technician) {
-    technician = 'Pramadhita A';
+    technician = 'Lead Field Engineer';
   }
 
   return technician;
@@ -418,7 +418,7 @@ function plnCleanAllPlaceholders_(sheet, customer, duePeriod, technician, option
       }
     } catch (_) {}
   }
-  if (!billAmount && customer.customerId === '548400528183') billAmount = 143281261;
+  if (!billAmount && customer.customerId === '543100000002') billAmount = 143281261;
 
   // 1. TextFinder replacements utama
   const replacements = [
@@ -867,7 +867,7 @@ function plnFillTN_(sheet, customer, duePeriod, record, technician) {
 
   // 1. Total Yang Harus Dibayar sesuai struk PDF PLN (contoh: 143.291.261)
   let totalHarusDibayar = plnNumber_(record.total || record.amount || record.tagihan || record['Total Harus Dibayar']);
-  if (!totalHarusDibayar && customer.customerId === '548400528183') {
+  if (!totalHarusDibayar && customer.customerId === '543100000002') {
     totalHarusDibayar = 143291261;
   }
 
@@ -1223,7 +1223,7 @@ function plnExtractMetersFromSSFile_(file) {
 }
 
 function plnFindPreviousSCTVMeters_(folderId, currentDuePeriod) {
-  const targetFolderId = folderId || (PLN_CUSTOMERS['548400528183'] && PLN_CUSTOMERS['548400528183'].folderId) || 'YOUR_CUSTOMER_SCTV_FOLDER_ID';
+  const targetFolderId = folderId || (PLN_CUSTOMERS['543100000002'] && PLN_CUSTOMERS['543100000002'].folderId) || 'YOUR_CUSTOMER_SCTV_FOLDER_ID';
   const prevPeriod = plnShiftMonth_(currentDuePeriod, -1);
   const prevMonthName = PLN_CONFIG.MONTHS[prevPeriod.getMonth()].toLowerCase();
   const prevMonthNum = String(prevPeriod.getMonth() + 1).padStart(2, '0');
@@ -1600,8 +1600,8 @@ function perbaikiTabControl(targetSpreadsheetId) {
 
   if (!matchedCustomer) {
     matchedCustomer = {
-      customerId: '548400528183',
-      name: 'PT. SCTV',
+      customerId: '543100000002',
+      name: 'Broadcaster Client B (National Broadcast)',
       folderId: 'YOUR_CUSTOMER_SCTV_FOLDER_ID'
     };
   }
@@ -1644,7 +1644,7 @@ function perbaikiTabControl(targetSpreadsheetId) {
     technician = String(tn.getRange(45, 2).getValue() || tn.getRange(39, 4).getValue() || '').trim();
     if (technician.includes('<<') || technician.toLowerCase().includes('teknisi')) technician = '';
   }
-  if (!technician) technician = 'Pramadhita A';
+  if (!technician) technician = 'Lead Field Engineer';
 
   // 3. Perbaiki & Rekonfigurasi Sheet TN
   if (tn) {

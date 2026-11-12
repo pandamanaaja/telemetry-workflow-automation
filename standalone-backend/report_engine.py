@@ -71,7 +71,7 @@ def convert_excel_to_pdf(excel_path: str, output_dir: str = TEMP_DIR) -> str:
 
 def merge_final_report_pdf(report_pdf_path: str, invoice_pdf_path: str, output_path: str) -> str:
     """
-    Menggabungkan Halaman 1-3 dari Laporan (TN, PERBANDINGAN, SCTV HITUNG)
+    Menggabungkan Halaman Laporan Eksekutif (TN, PERBANDINGAN, REKONSILIASI HITUNG)
     dengan PDF Invoice PLN asli menggunakan PyPDF secara lokal.
     """
     writer = PdfWriter()

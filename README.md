@@ -75,12 +75,12 @@ flowchart TD
 ### 3. ⚡ Multi-Customer PLN Billing Pipeline (GAS v16.5, n8n v16 Local pdf-lib, & Gemini OCR)
 * **PLN Auto Report Engine v16.5 (`apps-script/02-report-generators/pln_auto_report_v16_engine.js`)**:
   * **Dual-Format Continuity Scanner**: Automatically scans previous month meter stands across both Google Sheets and Microsoft Excel (`.xlsx`/`.xls`) files via virtual Drive API conversion.
-  * **SCTV 100% Chain Continuity**: Restores previous month meter stands directly into calculation sheets (`SCTV Hitung`) with multi-tier margin validation (Rp 100rb - 500rb based on days).
+  * **Multi-Tier Meter Chain Continuity**: Restores previous month meter stands directly into automated reconciliation sheets with multi-tier consumption variance validation (e.g. dynamically scaled margins based on operating billing days).
   * **Deadlock-Free `onEdit` Approval**: Replaces problematic single-flag triggers with dual-mode evaluation (`e.value === 'TRUE'` or `range.getValue() === true`), preventing UI deadlocks.
   * **Automatic Trigger Cleanup**: Auto-removes event listeners upon report finalization to stay safely under Google's 20-trigger quota limit.
   * **Auto Signature Technician Placement**: Programmatically positions PNG signature graphics with exact coordinate offsets (`D36`, 102x65px) without crashing if assets are absent.
 * **Zero-Dependency Local `pdf-lib` Multi-Sheet Merger v16.0 (`n8n-workflows/07-pln-finalize-pdf-local-pdflib.json`)**:
-  * Merges up to 4 distinct PDF documents in a single atomic pass: `TN` (portrait), `PERBANDINGAN` (landscape), `SCTV HITUNG` (calculation sheet), and the original supplier invoice.
+  * Merges up to 4 distinct PDF documents in a single atomic pass: `TN` (Payment Voucher portrait), `PERBANDINGAN` (3-Month Comparison landscape), `CALCULATION` (Reconciliation sheet), and the original supplier invoice.
   * In-process single-page slicing ensures zero instruction page leakage.
 * **Sequential Gemini Multimodal OCR & Sheet Builder (`n8n-workflows/05-pln-gemini-ocr-sheet-builder.json`)**:
   * Multimodal extraction of 11 critical utility billing fields (`LWBP`, `WBP`, `kVArh`, tariff power, period, payable amount) with error-tolerant sequential queuing.
@@ -105,12 +105,49 @@ flowchart TD
 * **Visual Switch Dynamic Routing**: Evaluates report metadata (`reportType: DAILY | WEEKLY | MONTHLY`) and routes data to isolated, pre-formatted Google Drive master templates:
   * **Daily (Harian)**: 28 columns (00:00 to 22:00 readings), 3,494 merged cells.
   * **Weekly (Mingguan)**: 18 columns (7 days + Average), 2,312 merged cells (zero leftover daily time columns).
-  * **Monthly (Bulanan)**: 14 columns (Weeks 1 to 5 + Average), 1,845 merged cells.
+  * **Monthly (Bulanan)**: Dynamic auto-detection between **Monthly 4W** (12 columns, 4 operating weeks) and **Monthly 5W** (14 columns, 5 operating weeks) based on workbook tab topology, preserving up to 1,845 merged cells.
 * **100% Visual & Formatting Fidelity**: Injects values into cloned single-sheet templates and exports genuine `.xlsx` files preserving exact font metrics, background fills, borders, and complex merged cell structures.
 * **Parallel Dual-Drive Storage & Auto-Purge**: Simultaneously uploads exported `.xlsx` files to two distinct Google Drive backup directories in parallel, then permanently purges the temporary cloned Google Spreadsheet via Drive API (`HTTP 204 No Content`).
 * **Automated Schedule Triggers in n8n**: Offloads automated scheduling from Apps Script to n8n Schedule Triggers (Daily at 05:00 WIB, Weekly on Sunday at 06:00 WIB, Monthly on 7th at 07:00 WIB) with direct Google Sheets REST API ingestion (0.3s), completely eliminating 360-second headless execution timeouts on 30MB+ spreadsheets while keeping the Google Sheets UI menu for on-demand manual triggers.
 
 ---
+
+
+---
+
+## 📖 Domain Nomenclature & Industrial Terminology
+
+To assist code reviewers and prospective engineering teams, this section outlines domain-specific terms across industrial broadcast telemetry, high-voltage utility metering, and mission-critical 24/7 site operations:
+
+### 1. ⚡ High-Voltage Electrical Utility Metering (PLN Industrial Tariffs)
+| Term | Full Designation | Engineering Context & Definition |
+| :--- | :--- | :--- |
+| **LWBP** | *Luar Waktu Beban Puncak* | **Off-Peak Energy Consumption**: Standard baseline tariff period (22:00–17:00 WIB) for industrial utility billing. |
+| **WBP** | *Waktu Beban Puncak* | **Peak Demand Window**: Premium tariff period (17:00–22:00 WIB) requiring higher per-kWh rates to manage national grid loads. |
+| **kVArh** | *kilo-Volt-Ampere reactive hour* | **Reactive Energy Consumption**: Measures inductive magnetizing load; power factor must maintain $\cos \varphi \ge 0.85$ to prevent grid penalty charges. |
+| **TN** | *Tanda Nota* | **Formal Payment Voucher / Executive Summary**: Standardized 1-page executive verification slip accompanying utility invoices for corporate finance sign-off. |
+| **Meter Continuity** | *Chain Stand Reconciliation* | Algorithmic guarantee that previous month ending meter readings automatically and immutably match current month starting readings across multi-sheet workbooks. |
+
+### 2. 📡 Industrial Broadcast & RF Telemetry Hardware
+| Parameter | Full Name | Operational Significance |
+| :--- | :--- | :--- |
+| **DPA** | *Driver Power Amplifier* | Initial solid-state RF gain stage driving transmission antennas (standard current draw: 0.3–5.0 A). |
+| **FPA** | *Final Power Amplifier* | High-capacity output power amplifier modules (FPA 1–8; standard current draw: 7.0–10.8 A). |
+| **OP** | *Output Power* | Real forward electromagnetic transmission power delivered to the antenna array. |
+| **RP** | *Reflected Power* | Power reflected back from the antenna feeder system; monitored closely to prevent transmitter thermal trip or damage. |
+| **PA-01 .. PA-10** | *Power Amplifier Modules* | Granular telemetry channels mapped across modular transmitter bays for real-time health grading. |
+
+### 3. 🕒 Operational Roster & Continuous Duty Codes
+| Shift Code | Category | Operational Definition |
+| :--- | :--- | :--- |
+| **C15 / C17** | Morning Shift | Early maintenance and parameter logging cycle. |
+| **C31 / C33** | Afternoon Shift | Transition and peak monitoring duty cycle. |
+| **C47 / C01** | Night / Overnight Shift | Off-peak transmitter monitoring, scheduled cleanings, and automated backup exports. |
+| **DT / FS / TL** | Special Status | *Dinas Tertentu* (Scheduled Assignment), *Full Shift*, or *Tugas Luar* (Off-site field intervention). |
+
+### 4. 📊 Multi-Template Cadence
+* **4W (4-Week Cadence - 12 Columns)**: Shorter monthly billing cycles containing 4 monitoring weeks; dynamically routed to 12-column master templates.
+* **5W (5-Week Cadence - 14 Columns)**: Extended monthly cycles spanning 5 calendar weeks; dynamically routed to 14-column master templates upon detecting a `MINGGU 5` tab in the target workbook.
 
 ## 📁 Repository Structure
 

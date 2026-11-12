@@ -105,18 +105,18 @@ MASTER_SPREADSHEET_ID = "YOUR_PLN_MASTER_SPREADSHEET_ID"
 SERVICE_ACCOUNT_FILE = os.path.join(os.path.dirname(__file__), "service_account.json")
 
 PLN_CUSTOMERS = {
-    "543104053078": {
+    "543100000001": {
         "key": "JOGLO",
-        "name": "INDOSIAR VISUAL M PT",
+        "name": "Broadcaster Client A (TV Network)",
         "folder_id": "YOUR_CUSTOMER_JOGLO_FOLDER_ID",
         "payment_template": "TN-Joglo",
         "comparison_template": "TN-Joglo A",
         "file_prefix": "IVM_JOGLO_PEMBAYARAN_PLN",
         "document_code": "ST.JOGLO-PLN-IVM",
     },
-    "548400528183": {
+    "543100000002": {
         "key": "SCTV",
-        "name": "PT. SCTV",
+        "name": "Broadcaster Client B (National Broadcast)",
         "folder_id": "YOUR_CUSTOMER_SCTV_FOLDER_ID",
         "payment_template": "TN-SCTV",
         "comparison_template": "TN-SCTV A",
@@ -124,9 +124,9 @@ PLN_CUSTOMERS = {
         "file_prefix": "SCTV_Panjang_Permohonan Pembayaran_PLN",
         "document_code": "",
     },
-    "543103684326": {
+    "543100000003": {
         "key": "MUSTOFA",
-        "name": "H MUSTOFA",
+        "name": "Commercial Partner C",
         "folder_id": "YOUR_CUSTOMER_JOGLO_FOLDER_ID",
         "payment_template": "TN-1",
         "comparison_template": "Perbandingan LWBP 3 bln TN1 ",
@@ -296,7 +296,7 @@ class ReportRequest(BaseModel):
     customer_id: str
     due_month: str
     due_year: int
-    technician: str = "Pramadhita A"
+    technician: str = "Lead Field Engineer"
     source_file_id: Optional[str] = None
 
 @app.get("/health")
@@ -386,10 +386,10 @@ Di n8n, node HTTP Request cukup memanggil:
 * **Body:**
   ```json
   {
-    "customer_id": "543104053078",
+    "customer_id": "543100000001",
     "due_month": "Oktober",
     "due_year": 2026,
-    "technician": "Pramadhita A",
+    "technician": "Lead Field Engineer",
     "source_file_id": "{{ $json.file_id }}"
   }
   ```

@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "pln-joglo-finalize-v133",
+        "path": "pln-report-finalize-v16",
         "responseMode": "lastNode",
         "options": {}
       },
@@ -16,7 +16,7 @@
         3952,
         640
       ],
-      "webhookId": "pln-joglo-finalize-v133"
+      "webhookId": "pln-report-finalize-v16"
     },
     {
       "parameters": {

@@ -1,5 +1,5 @@
 {
-  "name": "TX Joglo - Backup Excel Terjadwal (Template_Metering_MONTHLY_4W & 5W)",
+  "name": "Scheduled Telemetry Excel Multi-Template Ingestion & Backup Engine (4W & 5W)",
   "nodes": [
     {
       "parameters": {
@@ -476,7 +476,7 @@
         }
       },
       "id": "ff96fbdf-20c2-4ee4-910f-7aa044360c69",
-      "name": "Suntik Data Nilai ke Template",
+      "name": "Inject Telemetry Data to Template",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -583,7 +583,7 @@
     {
       "parameters": {
         "method": "DELETE",
-        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $('Suntik Data Nilai ke Template').first().json.spreadsheetId }}",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $('Inject Telemetry Data to Template').first().json.spreadsheetId }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
         "options": {}
@@ -784,7 +784,7 @@
       "main": [
         [
           {
-            "node": "Suntik Data Nilai ke Template",
+            "node": "Inject Telemetry Data to Template",
             "type": "main",
             "index": 0
           }
@@ -795,7 +795,7 @@
       "main": [
         [
           {
-            "node": "Suntik Data Nilai ke Template",
+            "node": "Inject Telemetry Data to Template",
             "type": "main",
             "index": 0
           }
@@ -806,7 +806,7 @@
       "main": [
         [
           {
-            "node": "Suntik Data Nilai ke Template",
+            "node": "Inject Telemetry Data to Template",
             "type": "main",
             "index": 0
           }
@@ -817,14 +817,14 @@
       "main": [
         [
           {
-            "node": "Suntik Data Nilai ke Template",
+            "node": "Inject Telemetry Data to Template",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Suntik Data Nilai ke Template": {
+    "Inject Telemetry Data to Template": {
       "main": [
         [
           {

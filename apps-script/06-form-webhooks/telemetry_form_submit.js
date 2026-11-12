@@ -1,6 +1,6 @@
 const N8N_WEBHOOK_URL = 'https://your-n8n-instance.example.com/webhook/YOUR_WEBHOOK_UUID';
 
-const FORM_TITLE = 'N8N Form PA ST Joglo';
+const FORM_TITLE = 'N8N Form PA Transmitter Site';
 const QUESTION_JAM_LAPORAN = 'Jam Laporan';
 
 function formatDateLocal(dateObj) {
