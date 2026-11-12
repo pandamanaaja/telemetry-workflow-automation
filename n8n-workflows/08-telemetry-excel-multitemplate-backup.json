@@ -1,10 +1,11 @@
 {
-  "name": "TX Joglo - Backup Excel Terjadwal (Fixed 4W & 5W)",
+  "name": "TX Joglo - Backup Excel Terjadwal (Full 4Minggu & 5Minggu Support)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "backup-excel-sheet",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "d6346528-9626-4d59-98dc-9934f9dde9d5",
@@ -118,10 +119,15 @@
     },
     {
       "parameters": {
+        "method": "GET",
         "url": "https://www.googleapis.com/drive/v3/files",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 120000
+        },
         "sendQuery": true,
+        "specifyQuery": "keypair",
         "queryParameters": {
           "parameters": [
             {
@@ -141,9 +147,6 @@
               "value": "50"
             }
           ]
-        },
-        "options": {
-          "timeout": 120000
         }
       },
       "id": "470564c8-849f-4319-91c1-4ce600271e13",
@@ -176,6 +179,7 @@
     },
     {
       "parameters": {
+        "method": "GET",
         "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $json.spreadsheetId + '?fields=sheets.properties.title' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
@@ -200,7 +204,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const TEMPLATES = {\n  DAILY: 'YOUR_DAILY_TEMPLATE_SPREADSHEET_ID',\n  WEEKLY: 'YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID',\n  MONTHLY_5W: 'YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID',\n  MONTHLY_4W: 'YOUR_MONTHLY_4W_TEMPLATE_SPREADSHEET_ID'\n};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nconst meta = $('Pilih Spreadsheet Bulan Target').first().json;\nconst spreadsheetId = meta.spreadsheetId;\nlet reportType = meta.reportType;\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [\n    d + '/' + m + '/' + yr,\n    pad(d) + '/' + pad(m) + '/' + yr,\n    d + '-' + m + '-' + yr,\n    pad(d) + '-' + pad(m) + '-' + yr\n  ].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n\n} else if (reportType === 'MONTHLY') {\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const targetPrev = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  const targetCurr = low(MONTHS[now.getMonth()] + ' ' + now.getFullYear());\n\n  sheetName = titles.find(t => low(t) === targetPrev)\n           || titles.find(t => low(t) === targetCurr)\n           || titles.find(t => MONTHS.some(m => low(t) === low(m + ' ' + now.getFullYear())))\n           || null;\n\n  // Cek apakah ada tab MINGGU 5 di workbook bulan ini\n  const hasMinggu5 = titles.some(t => {\n    const u = t.toUpperCase().trim();\n    return u.includes('MINGGU 5') || u.includes('MINGGU-5') || u.includes('MINGGU_5') || u.includes('WEEK 5');\n  });\n\n  reportType = hasMinggu5 ? 'MONTHLY_5W' : 'MONTHLY_4W';\n\n} else {\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const seen = [];\n  for (const r of [sat, sun]) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = ['/' + m + '/' + yr, '-' + m + '-' + yr];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) {\n    throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n  }\n}\n\nif (!sheetName) {\n  throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\n// Bounded ranges\nconst RANGES = {\n  DAILY: 'A1:AB550',      // 28 kolom\n  WEEKLY: 'A1:R550',       // 18 kolom\n  MONTHLY_5W: 'A1:N550',   // 14 kolom (5 minggu)\n  MONTHLY_4W: 'A1:L550'    // 12 kolom (4 minggu)\n};\nconst targetRange = RANGES[reportType] || 'A1:AB550';\nconst fullRange = \"'\" + sheetName + \"'!\" + targetRange;\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\/\\\\:*?\"<>|]/g, '-').trim();\n\nreturn [{ json: {\n  spreadsheetId,\n  sheetName,\n  range: fullRange,\n  reportType,\n  templateId: TEMPLATES[reportType] || TEMPLATES.MONTHLY_5W,\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
+        "jsCode": "const TEMPLATES = {\"DAILY\":\"YOUR_DAILY_TEMPLATE_SPREADSHEET_ID\",\"WEEKLY\":\"YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY_5Minggu\":\"YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY_4Minggu\":\"YOUR_MONTHLY_4W_TEMPLATE_SPREADSHEET_ID\"};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nconst meta = $('Pilih Spreadsheet Bulan Target').first().json;\nconst spreadsheetId = meta.spreadsheetId;\nlet reportType = meta.reportType;\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [\n    d + '/' + m + '/' + yr,\n    pad(d) + '/' + pad(m) + '/' + yr,\n    d + '-' + m + '-' + yr,\n    pad(d) + '-' + pad(m) + '-' + yr\n  ].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n\n} else if (reportType === 'MONTHLY') {\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const targetPrev = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  const targetCurr = low(MONTHS[now.getMonth()] + ' ' + now.getFullYear());\n\n  sheetName = titles.find(t => low(t) === targetPrev)\n           || titles.find(t => low(t) === targetCurr)\n           || titles.find(t => MONTHS.some(m => low(t) === low(m + ' ' + now.getFullYear())))\n           || null;\n\n  // Cek apakah ada tab MINGGU 5 di workbook bulan ini\n  const hasMinggu5 = titles.some(t => {\n    const u = t.toUpperCase().trim();\n    return u.includes('MINGGU 5') || u.includes('MINGGU-5') || u.includes('MINGGU_5') || u.includes('WEEK 5');\n  });\n\n  reportType = hasMinggu5 ? 'MONTHLY_5Minggu' : 'MONTHLY_4Minggu';\n\n} else {\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const seen = [];\n  for (const r of [sat, sun]) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = ['/' + m + '/' + yr, '-' + m + '-' + yr];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) {\n    throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n  }\n}\n\nif (!sheetName) {\n  throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\n// Bounded ranges\nconst RANGES = {\n  DAILY: 'A1:AB550',          // 28 kolom\n  WEEKLY: 'A1:R550',           // 18 kolom\n  MONTHLY_5Minggu: 'A1:N550',  // 14 kolom (5 minggu)\n  MONTHLY_4Minggu: 'A1:L550'   // 12 kolom (4 minggu)\n};\nconst targetRange = RANGES[reportType] || 'A1:AB550';\nconst fullRange = \"'\" + sheetName + \"'!\" + targetRange;\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\/:*?\"<>|]/g, '-').trim();\n\nreturn [{ json: {\n  spreadsheetId,\n  sheetName,\n  range: fullRange,\n  reportType,\n  templateId: TEMPLATES[reportType] || TEMPLATES.MONTHLY_5Minggu,\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
       },
       "id": "bdafa865-ee9a-402f-8b1e-34c3b6208967",
       "name": "Tentukan Nama Sheet",
@@ -213,6 +217,7 @@
     },
     {
       "parameters": {
+        "method": "GET",
         "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/{{ encodeURIComponent($json.range) }}?valueRenderOption=FORMATTED_VALUE",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
@@ -228,7 +233,6 @@
         1376,
         64
       ],
-      "retryOnFail": true,
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "YOUR_CREDENTIAL_ID",
@@ -286,7 +290,7 @@
                   {
                     "id": "r-m5",
                     "leftValue": "={{ $json.body.reportType }}",
-                    "rightValue": "MONTHLY_5W",
+                    "rightValue": "MONTHLY_5Minggu",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -330,7 +334,7 @@
                   {
                     "id": "r-m4",
                     "leftValue": "={{ $json.body.reportType }}",
-                    "rightValue": "MONTHLY_4W",
+                    "rightValue": "MONTHLY_4Minggu",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -444,7 +448,7 @@
         "options": {}
       },
       "id": "ad6ef1ca-02a1-49ca-af8f-60249ab8deaa",
-      "name": "Template Bulanan 4 Minggu (12 Kolom)",
+      "name": "Template_Metering_MONTHLY_4Minggu",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
@@ -488,6 +492,7 @@
     },
     {
       "parameters": {
+        "method": "GET",
         "url": "={{ 'https://docs.google.com/spreadsheets/d/' + $json.spreadsheetId + '/export?format=xlsx' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
@@ -768,7 +773,7 @@
         ],
         [
           {
-            "node": "Template Bulanan 4 Minggu (12 Kolom)",
+            "node": "Template_Metering_MONTHLY_4Minggu",
             "type": "main",
             "index": 0
           }
@@ -808,7 +813,7 @@
         ]
       ]
     },
-    "Template Bulanan 4 Minggu (12 Kolom)": {
+    "Template_Metering_MONTHLY_4Minggu": {
       "main": [
         [
           {
