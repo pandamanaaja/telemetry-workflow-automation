@@ -1,5 +1,5 @@
 {
-  "name": "TX Joglo - Backup Excel Terjadwal (n8n Schedule)",
+  "name": "TX Joglo - Backup Excel Terjadwal (Auto-Discovery Spreadsheet ID)",
   "nodes": [
     {
       "parameters": {
@@ -120,7 +120,67 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_SPREADSHEET_ID?fields=sheets.properties.title",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 120000
+        },
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "'YOUR_MASTER_FOLDER_ID' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+            },
+            {
+              "name": "fields",
+              "value": "files(id, name, modifiedTime)"
+            },
+            {
+              "name": "orderBy",
+              "value": "modifiedTime desc"
+            },
+            {
+              "name": "pageSize",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "id": "n-find-files",
+      "name": "Cari File di Folder Master",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        160
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nlet reportType;\nfor (const n of ['Tipe Harian', 'Tipe Mingguan', 'Tipe Bulanan']) {\n  try {\n    const it = $(n).first();\n    if (it) { reportType = it.json.reportType; break; }\n  } catch (e) {}\n}\nif (!reportType) reportType = 'DAILY';\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nlet targetDate = now;\n\nif (reportType === 'DAILY') {\n  targetDate = new Date(now.getTime() - 24 * 3600 * 1000); // kemarin (T-1)\n} else if (reportType === 'WEEKLY') {\n  targetDate = new Date(now.getTime() - 24 * 3600 * 1000); // pekan yang berakhir kemarin (Sabtu)\n} else if (reportType === 'MONTHLY') {\n  targetDate = new Date(now.getFullYear(), now.getMonth() - 1, 1); // bulan lalu\n}\n\nconst targetMonth = MONTHS[targetDate.getMonth()].toLowerCase();\nconst targetYear = String(targetDate.getFullYear());\nconst currentMonth = MONTHS[now.getMonth()].toLowerCase();\nconst currentYear = String(now.getFullYear());\n\nconst files = $input.first().json.files || [];\n\n// 1. Cari file spreadsheet di folder yang namanya memuat [BulanTarget] dan [TahunTarget]\nlet selected = files.find(f => {\n  const n = (f.name || '').toLowerCase();\n  return n.includes(targetMonth) && n.includes(targetYear);\n});\n\n// 2. Fallback: jika bulan lalu belum ada (misal testing di bulan berjalan), cari file bulan berjalan\nif (!selected) {\n  selected = files.find(f => {\n    const n = (f.name || '').toLowerCase();\n    return n.includes(currentMonth) && n.includes(currentYear);\n  });\n}\n\n// 3. Fallback: ambil file spreadsheet terbaru di folder\nif (!selected && files.length > 0) {\n  selected = files[0];\n}\n\nconst spreadsheetId = selected ? selected.id : 'YOUR_SPREADSHEET_ID';\nconst spreadsheetName = selected ? selected.name : 'Master Metering';\n\nreturn [{ json: {\n  spreadsheetId,\n  spreadsheetName,\n  reportType,\n  targetMonth,\n  targetYear\n} }];"
+      },
+      "id": "n-pick-file",
+      "name": "Pilih Spreadsheet Bulan Target",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $json.spreadsheetId + '?fields=sheets.properties.title' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "options": {
@@ -132,7 +192,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        460,
+        940,
         160
       ],
       "credentials": {
@@ -144,14 +204,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';\nconst TEMPLATES = {\"DAILY\":\"YOUR_DAILY_TEMPLATE_SPREADSHEET_ID\",\"WEEKLY\":\"YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY\":\"YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID\"};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nlet reportType;\nfor (const n of ['Tipe Harian', 'Tipe Mingguan', 'Tipe Bulanan']) {\n  try {\n    const it = $(n).first();\n    if (it) { reportType = it.json.reportType; break; }\n  } catch (e) {}\n}\nif (!reportType) throw new Error('Tipe laporan tidak terdeteksi');\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  // Harian (05:00): tab kemarin\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [\n    d + '/' + m + '/' + yr,\n    pad(d) + '/' + pad(m) + '/' + yr,\n    d + '-' + m + '-' + yr,\n    pad(d) + '-' + pad(m) + '-' + yr\n  ].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n\n} else if (reportType === 'MONTHLY') {\n  // Bulanan: cari tab bulan lalu (jadwal resmi tgl 7), fallback ke bulan berjalan (saat testing), atau tab nama bulan apa pun\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const targetPrev = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  const targetCurr = low(MONTHS[now.getMonth()] + ' ' + now.getFullYear());\n\n  sheetName = titles.find(t => low(t) === targetPrev)\n           || titles.find(t => low(t) === targetCurr)\n           || titles.find(t => MONTHS.some(m => low(t) === low(m + ' ' + now.getFullYear())))\n           || null;\n\n} else {\n  // Mingguan (Minggu 06:00): pekan Minggu-Sabtu yang baru selesai\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const seen = [];\n  for (const r of [sat, sun]) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = ['/' + m + '/' + yr, '-' + m + '-' + yr];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) {\n    throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n  }\n}\n\nif (!sheetName) {\n  throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\/:*?\"<>|]/g, '-').trim();\n\nreturn [{ json: {\n  spreadsheetId: SPREADSHEET_ID,\n  sheetName,\n  reportType,\n  templateId: TEMPLATES[reportType],\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
+        "jsCode": "const TEMPLATES = {\"DAILY\":\"YOUR_DAILY_TEMPLATE_SPREADSHEET_ID\",\"WEEKLY\":\"YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY\":\"YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID\"};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nconst meta = $('Pilih Spreadsheet Bulan Target').first().json;\nconst spreadsheetId = meta.spreadsheetId;\nconst reportType = meta.reportType;\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [\n    d + '/' + m + '/' + yr,\n    pad(d) + '/' + pad(m) + '/' + yr,\n    d + '-' + m + '-' + yr,\n    pad(d) + '-' + pad(m) + '-' + yr\n  ].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n\n} else if (reportType === 'MONTHLY') {\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const targetPrev = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  const targetCurr = low(MONTHS[now.getMonth()] + ' ' + now.getFullYear());\n\n  sheetName = titles.find(t => low(t) === targetPrev)\n           || titles.find(t => low(t) === targetCurr)\n           || titles.find(t => MONTHS.some(m => low(t) === low(m + ' ' + now.getFullYear())))\n           || null;\n\n} else {\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const seen = [];\n  for (const r of [sat, sun]) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = ['/' + m + '/' + yr, '-' + m + '-' + yr];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) {\n    throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n  }\n}\n\nif (!sheetName) {\n  throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\/:*?\"<>|]/g, '-').trim();\n\nreturn [{ json: {\n  spreadsheetId,\n  sheetName,\n  reportType,\n  templateId: TEMPLATES[reportType],\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
       },
-      "id": "n-pick",
+      "id": "n-pick-sheet",
       "name": "Tentukan Nama Sheet",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        700,
+        1180,
         160
       ]
     },
@@ -170,7 +230,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        940,
+        1420,
         160
       ],
       "credentials": {
@@ -189,7 +249,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1180,
+        1660,
         400
       ]
     },
@@ -272,7 +332,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
       "position": [
-        1360,
+        1860,
         400
       ]
     },
@@ -292,7 +352,7 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        1500,
+        2060,
         240
       ],
       "credentials": {
@@ -318,7 +378,7 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        1500,
+        2060,
         400
       ],
       "credentials": {
@@ -344,7 +404,7 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        1500,
+        2060,
         560
       ],
       "credentials": {
@@ -372,7 +432,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1760,
+        2320,
         400
       ],
       "credentials": {
@@ -402,7 +462,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2040,
+        2580,
         400
       ],
       "credentials": {
@@ -432,7 +492,7 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        2500,
+        2840,
         300
       ],
       "credentials": {
@@ -462,7 +522,7 @@
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        2500,
+        2840,
         500
       ],
       "credentials": {
@@ -485,7 +545,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2780,
+        3100,
         400
       ],
       "credentials": {
@@ -545,7 +605,7 @@
       "main": [
         [
           {
-            "node": "Ambil Daftar Nama Sheet",
+            "node": "Cari File di Folder Master",
             "type": "main",
             "index": 0
           }
@@ -556,7 +616,7 @@
       "main": [
         [
           {
-            "node": "Ambil Daftar Nama Sheet",
+            "node": "Cari File di Folder Master",
             "type": "main",
             "index": 0
           }
@@ -564,6 +624,28 @@
       ]
     },
     "Tipe Bulanan": {
+      "main": [
+        [
+          {
+            "node": "Cari File di Folder Master",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cari File di Folder Master": {
+      "main": [
+        [
+          {
+            "node": "Pilih Spreadsheet Bulan Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pilih Spreadsheet Bulan Target": {
       "main": [
         [
           {
