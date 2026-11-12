@@ -134,7 +134,7 @@ const PLN_CUSTOMERS = {
     documentCode: 'ST PANJANG-PLN-SCTV'
   },
 
-  '537420834389': {
+  '537400000004': {
     key: 'BEKASI',
     name: 'PT ELANG MAHKOTA TEKNOLOG',
     folderId: 'YOUR_CUSTOMER_BEKASI_HAMBALANG_FOLDER_ID',
@@ -144,7 +144,7 @@ const PLN_CUSTOMERS = {
     documentCode: 'BEKASI-PLN-IVM'
   },
 
-  '538613957435': {
+  '538600000005': {
     key: 'HAMBALANG',
     name: 'PT ELANG MAHKOTA TEKNOLOG',
     folderId: 'YOUR_CUSTOMER_BEKASI_HAMBALANG_FOLDER_ID',
