@@ -447,7 +447,7 @@
                                    ],
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
-                                                                        "id":  "zkuMD8KKkPG2INKV",
+                                                                        "id":  "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
                                                                         "name":  "Google Drive OAuth2"
                                                                     }
                                       }
@@ -715,7 +715,7 @@
                                    ],
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
-                                                                        "id":  "zkuMD8KKkPG2INKV",
+                                                                        "id":  "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
                                                                         "name":  "Google Drive OAuth2"
                                                                     }
                                       }
