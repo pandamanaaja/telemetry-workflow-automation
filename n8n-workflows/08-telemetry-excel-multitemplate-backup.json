@@ -1,5 +1,5 @@
 {
-  "name": "Telemetry Multi-Template Scheduled & Manual Backup Engine",
+  "name": "TX Joglo - Backup Excel Terjadwal (n8n Schedule)",
   "nodes": [
     {
       "parameters": {
@@ -144,7 +144,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';\nconst TEMPLATES = {\"DAILY\":\"YOUR_DAILY_TEMPLATE_SPREADSHEET_ID\",\"WEEKLY\":\"YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY\":\"YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID\"};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nlet reportType;\nfor (const n of ['Tipe Harian', 'Tipe Mingguan', 'Tipe Bulanan']) {\n  try {\n    const it = $(n).first();\n    if (it) { reportType = it.json.reportType; break; }\n  } catch (e) {}\n}\nif (!reportType) throw new Error('Tipe laporan tidak terdeteksi');\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [d + '/' + m + '/' + yr, pad(d) + '/' + pad(m) + '/' + yr, d + '-' + m + '-' + yr].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n} else if (reportType === 'MONTHLY') {\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const target = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  sheetName = titles.find(t => low(t) === target) || null;\n} else {\n  // Jalan hari Minggu 06:00 -> backup pekan Minggu-Sabtu yang baru selesai (berakhir kemarin = Sabtu)\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const refs = [sat, sun];\n  const seen = [];\n  for (const r of refs) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = [ '/' + m + '/' + yr, '-' + m + '-' + yr ];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\nif (!sheetName) throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\\\/:*?\"<>|]/g, '-').trim();\nreturn [{ json: {\n  spreadsheetId: SPREADSHEET_ID,\n  sheetName,\n  reportType,\n  templateId: TEMPLATES[reportType],\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
+        "jsCode": "const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';\nconst TEMPLATES = {\"DAILY\":\"YOUR_DAILY_TEMPLATE_SPREADSHEET_ID\",\"WEEKLY\":\"YOUR_WEEKLY_TEMPLATE_SPREADSHEET_ID\",\"MONTHLY\":\"YOUR_MONTHLY_TEMPLATE_SPREADSHEET_ID\"};\nconst MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];\n\nlet reportType;\nfor (const n of ['Tipe Harian', 'Tipe Mingguan', 'Tipe Bulanan']) {\n  try {\n    const it = $(n).first();\n    if (it) { reportType = it.json.reportType; break; }\n  } catch (e) {}\n}\nif (!reportType) throw new Error('Tipe laporan tidak terdeteksi');\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst titles = ($input.first().json.sheets || []).map(s => s.properties.title);\nconst low = t => String(t).trim().toLowerCase();\nconst pad = n => String(n).padStart(2, '0');\nlet sheetName = null;\n\nif (reportType === 'DAILY') {\n  // Harian (05:00): tab kemarin\n  const y = new Date(now.getTime() - 24 * 3600 * 1000);\n  const d = y.getDate(), m = y.getMonth() + 1, yr = y.getFullYear();\n  const cands = [\n    d + '/' + m + '/' + yr,\n    pad(d) + '/' + pad(m) + '/' + yr,\n    d + '-' + m + '-' + yr,\n    pad(d) + '-' + pad(m) + '-' + yr\n  ].map(low);\n  sheetName = titles.find(t => cands.includes(low(t))) || null;\n\n} else if (reportType === 'MONTHLY') {\n  // Bulanan: cari tab bulan lalu (jadwal resmi tgl 7), fallback ke bulan berjalan (saat testing), atau tab nama bulan apa pun\n  const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);\n  const targetPrev = low(MONTHS[pm.getMonth()] + ' ' + pm.getFullYear());\n  const targetCurr = low(MONTHS[now.getMonth()] + ' ' + now.getFullYear());\n\n  sheetName = titles.find(t => low(t) === targetPrev)\n           || titles.find(t => low(t) === targetCurr)\n           || titles.find(t => MONTHS.some(m => low(t) === low(m + ' ' + now.getFullYear())))\n           || null;\n\n} else {\n  // Mingguan (Minggu 06:00): pekan Minggu-Sabtu yang baru selesai\n  const sat = new Date(now.getTime() - 24 * 3600 * 1000);\n  const sun = new Date(now.getTime() - 7 * 24 * 3600 * 1000);\n  const seen = [];\n  for (const r of [sat, sun]) {\n    const w = Math.ceil(r.getDate() / 7);\n    const m = r.getMonth() + 1, yr = r.getFullYear();\n    const tail = ['/' + m + '/' + yr, '-' + m + '-' + yr];\n    const key = 'MINGGU ' + w;\n    seen.push(key + ' ' + m + '/' + yr);\n    const hit = titles.find(t => {\n      const u = t.toUpperCase();\n      const i = u.indexOf(key);\n      if (i < 0) return false;\n      const next = u.charAt(i + key.length);\n      if (next >= '0' && next <= '9') return false;\n      return tail.some(x => t.indexOf(x) >= 0);\n    });\n    if (hit) { sheetName = hit; break; }\n  }\n  if (!sheetName) {\n    throw new Error('Tab mingguan tidak ditemukan. Dicari: ' + seen.join(' / ') + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n  }\n}\n\nif (!sheetName) {\n  throw new Error('Sheet target tidak ditemukan untuk tipe ' + reportType + '. Daftar sheet: ' + titles.slice(0, 60).join(' | '));\n}\n\nconst ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '_' + pad(now.getHours()) + '-' + pad(now.getMinutes());\nconst safe = sheetName.replace(/[\\/:*?\"<>|]/g, '-').trim();\n\nreturn [{ json: {\n  spreadsheetId: SPREADSHEET_ID,\n  sheetName,\n  reportType,\n  templateId: TEMPLATES[reportType],\n  fileName: 'Laporan_' + safe + '_' + ts + '.xlsx'\n} }];"
       },
       "id": "n-pick",
       "name": "Tentukan Nama Sheet",
@@ -297,7 +297,7 @@
       ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "id": "YOUR_CREDENTIAL_ID",
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
           "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
@@ -323,7 +323,7 @@
       ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "id": "YOUR_CREDENTIAL_ID",
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
           "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
@@ -349,7 +349,7 @@
       ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "id": "YOUR_CREDENTIAL_ID",
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
           "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
@@ -422,7 +422,7 @@
         },
         "folderId": {
           "__rl": true,
-          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_1",
+          "value": "YOUR_BACKUP_FOLDER_ID_1",
           "mode": "id"
         },
         "options": {}
@@ -437,7 +437,7 @@
       ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "id": "YOUR_CREDENTIAL_ID",
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
           "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
@@ -452,7 +452,7 @@
         },
         "folderId": {
           "__rl": true,
-          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID_2",
+          "value": "YOUR_BACKUP_FOLDER_ID_2",
           "mode": "id"
         },
         "options": {}
@@ -467,7 +467,7 @@
       ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "id": "YOUR_CREDENTIAL_ID",
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
           "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
@@ -490,7 +490,7 @@
       ],
       "credentials": {
         "googleDriveOAuth2Api": {
-          "id": "YOUR_CREDENTIAL_ID",
+          "id": "YOUR_DRIVE_CREDENTIAL_ID",
           "name": "YOUR_GOOGLE_CREDENTIAL_NAME"
         }
       }
