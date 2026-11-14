@@ -7,7 +7,7 @@
  * to n8n Webhook for automated Gemini Multimodal OCR extraction.
  */
 
-const PLN_CONFIG = {
+const PLN_SUBMIT_CONFIG = {
   N8N_WEBHOOK_URL: 'https://your-n8n-instance.example.com/webhook/pln-bill-webhook',
   FORM_TITLE: 'Form Tagihan Listrik PLN',
   LOCK_TIMEOUT_MS: 30000
@@ -23,7 +23,7 @@ function onFormSubmit(e) {
   const execId = Utilities.getUuid();
 
   try {
-    lock.waitLock(PLN_CONFIG.LOCK_TIMEOUT_MS);
+    lock.waitLock(PLN_SUBMIT_CONFIG.LOCK_TIMEOUT_MS);
 
     if (!e || !e.namedValues) {
       throw new Error('Event object e.namedValues tidak ditemukan. Pastikan trigger adalah "On form submit".');
@@ -105,7 +105,7 @@ function onFormSubmit(e) {
     };
 
     // 4. Kirim ke Webhook n8n
-    const response = UrlFetchApp.fetch(PLN_CONFIG.N8N_WEBHOOK_URL, {
+    const response = UrlFetchApp.fetch(PLN_SUBMIT_CONFIG.N8N_WEBHOOK_URL, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),

@@ -1,11 +1,17 @@
 /**
  * =========================================================================
- * PENGATURAN ID SPREADSHEET & SHEET
+ * [LEGACY STANDALONE COMPONENT] FAST BACKUP ENGINE
+ * =========================================================================
+ * CATATAN PENGGUNAAN:
+ * File ini adalah modul backup in-memory legacy (mandiri).
+ * Jika Anda menggunakan 'master_response_met_suite.js' (v8.5) atau
+ * 'master_metering_suite.js' (v17.0), fitur backup ini SUDAH TERMASUK di dalamnya.
+ * JANGAN memasang file ini bersamaan dalam 1 file proyek Apps Script yang sama.
  * =========================================================================
  */
-const SOURCE_SPREADSHEET_ID = "YOUR_SOURCE_SPREADSHEET_ID"; // Spreadsheet Asal
-const TARGET_SPREADSHEET_ID = "YOUR_TARGET_SPREADSHEET_ID"; // Spreadsheet Tujuan
-const SHEET_NAME = "Master Metering"; // Nama Sheet yang diproses
+var SOURCE_SPREADSHEET_ID = "YOUR_SOURCE_SPREADSHEET_ID"; // Spreadsheet Asal
+var TARGET_SPREADSHEET_ID = "YOUR_TARGET_SPREADSHEET_ID"; // Spreadsheet Tujuan
+var SHEET_NAME            = "Master Metering"; // Nama Sheet yang diproses
 
 
 /**

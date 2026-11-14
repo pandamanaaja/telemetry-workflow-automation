@@ -1,7 +1,12 @@
 /**
  * ============================================================
- * PLN AUTO REPORT v14.8 (MULTI-FOLDER ROUTING & MASTER ARCHIVE)
- * COMPLETE MULTI-CUSTOMER GOOGLE APPS SCRIPT - FULLY FIXED
+ * [LEGACY ENGINE v14.8] PLN AUTO REPORT ENGINE
+ * ============================================================
+ * CATATAN PENGGUNAAN:
+ * File ini adalah versi legacy v14.8. Versi terbaru yang disarankan
+ * adalah 'pln_auto_report_v16_engine.js' (v16.7) yang dilengkapi
+ * fitur Meter Continuity Scan dan penempatan signature otomatis.
+ * JANGAN memasang v14 dan v16 secara bersamaan dalam 1 proyek Apps Script.
  * ============================================================
  *
  * STORAGE & ARCHIVAL FEATURES IN v14.8:
@@ -23,7 +28,7 @@
 // 1. CONFIGURATION (SANITIZED PLACEHOLDERS)
 // ============================================================
 
-const PLN_CONFIG = {
+var PLN_CONFIG = {
 
   VERSION: '14.8',
 

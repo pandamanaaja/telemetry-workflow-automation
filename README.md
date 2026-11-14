@@ -136,17 +136,23 @@ To assist code reviewers and prospective engineering teams, this section outline
 | **LWBP** | *Luar Waktu Beban Puncak* | **Off-Peak Energy Consumption**: Standard baseline tariff period (22:00–17:00 WIB) for industrial utility billing. |
 | **WBP** | *Waktu Beban Puncak* | **Peak Demand Window**: Premium tariff period (17:00–22:00 WIB) requiring higher per-kWh rates to manage national grid loads. |
 | **kVArh** | *kilo-Volt-Ampere reactive hour* | **Reactive Energy Consumption**: Measures inductive magnetizing load; power factor must maintain $\cos \varphi \ge 0.85$ to prevent grid penalty charges. |
+| **Cos Phi ($\cos\varphi$)** | *Power Factor* | **Load Efficiency Ratio**: Electrical displacement power factor; maintained $\ge 0.85$ under PLN standard. |
+| **PTOT** | *Total Active Power* | **3-Phase Active Power**: Total active power demand in kW, cross-validated via $P = (3 \times V_{\text{avg}} \times I_{\text{avg}} \times \cos\varphi) / 1000$. |
 | **TN** | *Tanda Nota* | **Formal Payment Voucher / Executive Summary**: Standardized 1-page executive verification slip accompanying utility invoices for corporate finance sign-off. |
 | **Meter Continuity** | *Chain Stand Reconciliation* | Algorithmic guarantee that previous month ending meter readings automatically and immutably match current month starting readings across multi-sheet workbooks. |
 
 ### 2. 📡 Industrial Broadcast & RF Telemetry Hardware
 | Parameter | Full Name | Operational Significance |
 | :--- | :--- | :--- |
+| **IVM & SCTV** | *Indosiar & Surya Citra Televisi* | Co-located national television broadcast transmission stations sharing electrical grid panels and transmitter towers. |
 | **DPA** | *Driver Power Amplifier* | Initial solid-state RF gain stage driving transmission antennas (standard current draw: 0.3–5.0 A). |
 | **FPA** | *Final Power Amplifier* | High-capacity output power amplifier modules (FPA 1–8; standard current draw: 7.0–10.8 A). |
 | **OP** | *Output Power* | Real forward electromagnetic transmission power delivered to the antenna array. |
 | **RP** | *Reflected Power* | Power reflected back from the antenna feeder system; monitored closely to prevent transmitter thermal trip or damage. |
 | **PA-01 .. PA-10** | *Power Amplifier Modules* | Granular telemetry channels mapped across modular transmitter bays for real-time health grading. |
+| **Waveguide Pressure** | *Waveguide Nitrogen/Air Pressure* | Pressurized dry air/nitrogen gas line for antenna waveguides; values dropping to 0.00 indicate physical enclosure puncture. |
+| **Coolant SV** | *Coolant Tank Set Value* | Temperature target parameter for transmitter closed-loop liquid cooling systems; static setpoints are protected from false anomaly alarms. |
+| **PER** | *Negative Telemetry Parameter* | Naturally negative operational parameters (such as bias grid voltages or error margins) correctly operating at negative values (e.g. -7 to -107V). |
 
 ### 3. 🕒 Operational Roster & Continuous Duty Codes
 | Shift Code | Category | Operational Definition |
@@ -156,7 +162,16 @@ To assist code reviewers and prospective engineering teams, this section outline
 | **C47 / C01** | Night / Overnight Shift | Off-peak transmitter monitoring, scheduled cleanings, and automated backup exports. |
 | **DT / FS / TL** | Special Status | *Dinas Tertentu* (Scheduled Assignment), *Full Shift*, or *Tugas Luar* (Off-site field intervention). |
 
-### 4. 📊 Multi-Template Cadence
+### 4. 🕒 Historical Geodesy & Date Epochs
+* **Batavia 1899 (+07:25)**: Google Sheets stores time-only values (e.g., `11:00`) as day fractions relative to epoch `December 30, 1899`. Indonesia historically utilized Batavia Mean Time (GMT+07:25:04) before transitioning to GMT+07:00 (WIB). Converting time cells without stripping the date epoch can cause a 25-minute timezone distortion (e.g., `11:25`) or cause cells to render raw epoch dates (`12/30/1899`).
+
+### 5. 🛠 Data Architecture & Pipeline Principles
+* **Zero-Touch Metadata Protection**: Preserves metadata columns (`Timestamp`, `Nama Teknisi`, `Jam Metering`) from being overwritten by batch anomaly repairs, maintaining exact spreadsheet number formatting (`HH:mm`).
+* **Zero-Variance Protection**: Automatically recognizes invariant setpoint columns where $\max - \min \approx 0$ (such as battery counters or SV targets) as valid static operations, eliminating false anomaly flags.
+* **GID**: The unique numeric identifier assigned to each worksheet tab inside a Google Spreadsheet URL (`#gid=...`).
+* **Autocrat Replacement**: Eliminates slow third-party Google Workspace add-ons by orchestrating native Google Docs API `batchUpdate` transactions in n8n.
+
+### 6. 📊 Multi-Template Cadence
 * **4W (4-Week Cadence - 12 Columns)**: Shorter monthly billing cycles containing 4 monitoring weeks; dynamically routed to 12-column master templates.
 * **5W (5-Week Cadence - 14 Columns)**: Extended monthly cycles spanning 5 calendar weeks; dynamically routed to 14-column master templates upon detecting a `MINGGU 5` tab in the target workbook.
 
@@ -184,15 +199,15 @@ telemetry-workflow-automation/
 │
 ├── apps-script/                               # Google Apps Script enterprise modules
 │   ├── 01-master-metering/
+│   │   ├── master_response_met_suite.js       # [RECOMMENDED] Master response MET audit, PLN compliance, & auto-sheet backup (v8.5)
 │   │   ├── master_metering_suite.js           # Multi-sheet statistical pattern engine & shift recovery (v17.0)
-│   │   ├── master_response_met_suite.js       # Master response MET audit, PLN compliance, & auto-sheet backup (v8.5)
-│   │   ├── anomaly_detection.js               # Z-Score outlier & missing cell scanner
-│   │   ├── fast_backup_engine.js              # High-speed in-memory retention engine
+│   │   ├── anomaly_detection.js               # [Legacy Standalone] Z-Score outlier & missing cell scanner
+│   │   ├── fast_backup_engine.js              # [Legacy Standalone] High-speed in-memory retention engine
 │   │   └── telemetry_excel_multitemplate_backup.js # Multi-template fast Excel backup & cron triggers
 │   ├── 02-report-generators/
+│   │   ├── pln_auto_report_v16_engine.js      # [RECOMMENDED v16.7] Multi-customer PLN auto report (Continuity + SCTV Hitung)
+│   │   ├── pln_auto_report_v14_engine.js      # [Legacy v14.8] Multi-customer PLN auto report
 │   │   ├── baseline_pdf_generator.js          # Incremental pointer-based PDF report generator
-│   │   ├── pln_auto_report_v14_engine.js      # Multi-customer PLN auto report v14.8
-│   │   ├── pln_auto_report_v16_engine.js      # Multi-customer PLN auto report v16.5 (Continuity + SCTV Hitung)
 │   │   ├── pln_billing_report_builder.js      # Automated PLN billing executive report builder
 │   │   ├── pln_single_page_pdf_exporter.js    # Single-page A4 Portrait/Landscape GID PDF exporter
 │   │   └── xlsx_multi_sheet_exporter.js       # Scheduled daily/weekly/monthly XLSX exporter
@@ -259,9 +274,11 @@ telemetry-workflow-automation/
 ### 2. Installing Google Apps Script
 1. Open your target Google Spreadsheet.
 2. Navigate to **Extensions** $\rightarrow$ **Apps Script**.
-3. Create new script files corresponding to the modules in `apps-script/` (such as `pln_auto_report_v16_engine.js`).
-4. Update the configuration block at the top of each script (e.g., `MASTER_ID`, `ALL_PDFS_FOLDER_ID`, `REPORT_SECRET`).
-5. Set up form submit triggers via `ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create()`.
+3. **Module Selection & Isolation**:
+   * **For Master Response & Telemetry Audit**: Deploy [`master_response_met_suite.js`](apps-script/01-master-metering/master_response_met_suite.js) (All-in-one v8.5 with non-KWH scanning, zero-touch jam protection, and auto-sheet backup). Do **not** deploy legacy standalone modules (`anomaly_detection.js` or `fast_backup_engine.js`) alongside it to prevent global identifier collisions.
+   * **For PLN Multi-Customer Auto Reporting**: Deploy [`pln_auto_report_v16_engine.js`](apps-script/02-report-generators/pln_auto_report_v16_engine.js) (v16.7). Do not deploy legacy `v14` alongside `v16`.
+4. Update the configuration block at the top of the deployed script (e.g., `SOURCE_ID`, `TARGET_ID`, `MASTER_ID`, `ALL_PDFS_FOLDER_ID`).
+5. Set up form submit triggers via `ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create()` where applicable.
 
 ### 3. Running the Standalone Python Microservice (Optional)
 ```bash

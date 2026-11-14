@@ -1,6 +1,15 @@
-// ==============================================================================
-// KONFIGURASI GLOBAL SPREADSHEET & SHEET
-// ==============================================================================
+/**
+ * ==============================================================================
+ * [LEGACY STANDALONE COMPONENT] STATISTICAL ANOMALY DETECTION ENGINE
+ * ==============================================================================
+ * CATATAN PENGGUNAAN:
+ * File ini adalah modul deteksi anomali Z-score legacy (mandiri).
+ * Modul ini telah disempurnakan dan digantikan secara penuh oleh
+ * 'master_response_met_suite.js' (v8.5) yang mencakup deteksi non-KWH, proteksi
+ * format jam metering, proteksi setpoint konstan, dan pembuatan sheet backup.
+ * JANGAN memasang file ini bersamaan dalam 1 file proyek Apps Script yang sama.
+ * ==============================================================================
+ */
 var SHEET_NAME = "MASTER-RESPONSE-MET";
 var SOURCE_ID  = "YOUR_MASTER_SPREADSHEET_ID"; // Spreadsheet Master
 var TARGET_ID  = "YOUR_BACKUP_SPREADSHEET_ID"; // Spreadsheet Backup
