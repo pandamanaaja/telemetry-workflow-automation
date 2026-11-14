@@ -92,6 +92,12 @@ flowchart TD
   * Includes complete production `Dockerfile`, `docker-compose.yml`, systemd daemon unit, and reverse-proxy Nginx configuration.
 
 ### 5. 🔍 High-Performance Data Processing & Anomaly Scanner (`apps-script/`)
+* **Multi-Sheet Statistical Master Metering Suite (`01-master-metering/master_metering_suite.js`)**:
+  * Unified enterprise suite v17.0 executing across all workbook sheets simultaneously (`MASTER METERING`, `BACKUP_BULAN_...`, `BACKUP_HARI_...`).
+  * **Pure Statistical Pattern Engine**: 100% free from theoretical physics formulas; employs median anchors, Min-Max bounds, 10x/100x/1000x typo detection, 0.1x decimal shift recovery, and moving neighbor deltas.
+  * **Naturally Negative Parameter Protection**: Protects negative transmission parameters (`PER`, `GRID VOLTAGE TX A & B`) from `Math.abs()` inversion, while correcting typo positive inputs (e.g. `107.79` -> `-107.79`).
+  * **Anti-Batavia 1899 Shift Time Restoration**: Strips historical +07:25 Batavia timezone offset distortion and locks Plain Text (`@`) shift intervals (`7:00`, `1:00`, `23:00`).
+  * **Cut-Off & In-Memory Purge Archival**: Copies records to dedicated backup sheets, activates the new tab, and purges archived rows from the master sheet to maintain lightweight operational workbooks.
 * **Statistical Outlier Detection (`01-master-metering/anomaly_detection.js`)**:
   * Rolling window ($N=3$) Z-Score algorithm ($\mu \pm 2.5\sigma$) with minimum absolute threshold filters ($\Delta \ge 2.0$) to highlight anomalous telemetry spikes.
   * Batch visual alerts via a single `range.setBackgrounds()` API call.
@@ -173,6 +179,7 @@ telemetry-workflow-automation/
 │
 ├── apps-script/                               # Google Apps Script enterprise modules
 │   ├── 01-master-metering/
+│   │   ├── master_metering_suite.js           # Multi-sheet statistical pattern engine & shift recovery (v17.0)
 │   │   ├── anomaly_detection.js               # Z-Score outlier & missing cell scanner
 │   │   ├── fast_backup_engine.js              # High-speed in-memory retention engine
 │   │   └── telemetry_excel_multitemplate_backup.js # Multi-template fast Excel backup & cron triggers
