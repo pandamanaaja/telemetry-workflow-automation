@@ -14,14 +14,14 @@ function onOpen() {
   const ui = getSafeUi();
   if (!ui) return;
 
-  ui.createMenu('ðŸ” Deteksi & Backup')
+  ui.createMenu('🔍 Deteksi & Backup')
     .addItem('Pindai Anomali Angka (Abaikan Teks)', 'detectNumericAnomaliesOnly')
     .addSeparator()
     .addItem('Backup Otomatis (2 Bulan Lalu Full)', 'backupOtomatis2BulanLalu')
     .addItem('Backup Manual (Berdasarkan Tanggal)', 'backupManualSesuaiTanggal')
     .addItem('Backup Manual (Berdasarkan Bulan)', 'backupManualSesuaiBulan')
     .addSeparator()
-    .addItem('âš¡ Backup LENGKAP (Semua Data Master)', 'backupLengkapSemuaData')
+    .addItem('⚡ Backup LENGKAP (Semua Data Master)', 'backupLengkapSemuaData')
     .addToUi();
 }
 

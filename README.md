@@ -126,9 +126,6 @@ flowchart TD
 
 ---
 
-
----
-
 ## 📖 Domain Nomenclature & Industrial Terminology
 
 To assist code reviewers and prospective engineering teams, this section outlines domain-specific terms across industrial broadcast telemetry, high-voltage utility metering, and mission-critical 24/7 site operations:
