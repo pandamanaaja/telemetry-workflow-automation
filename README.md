@@ -98,6 +98,14 @@ flowchart TD
   * **Naturally Negative Parameter Protection**: Protects negative transmission parameters (`PER`, `GRID VOLTAGE TX A & B`) from `Math.abs()` inversion, while correcting typo positive inputs (e.g. `107.79` -> `-107.79`).
   * **Anti-Batavia 1899 Shift Time Restoration**: Strips historical +07:25 Batavia timezone offset distortion and locks Plain Text (`@`) shift intervals (`7:00`, `1:00`, `23:00`).
   * **Cut-Off & In-Memory Purge Archival**: Copies records to dedicated backup sheets, activates the new tab, and purges archived rows from the master sheet to maintain lightweight operational workbooks.
+* **Master Response MET Suite (`01-master-metering/master_response_met_suite.js`)**:
+  * Complete industrial audit, automated repair, and dynamic sheet backup suite v8.5 across 168 telemetry columns.
+  * **Zero-Touch Metadata Protection**: Columns `Timestamp`, `Nama Teknisi`, and `Jam Metering` are strictly excluded from batch writes (`colFixed > 0` selective targeting), completely preventing Google Sheets epoch formatting glitches (`12/30/1899`).
+  * **1-Click Jam Metering Restoration**: Dedicated `kembalikanFormatJamMeteringAsli()` utility restoring native `HH:mm` time formatting.
+  * **Zero-Variance Protection**: Automatically recognizes static operational constants (e.g. Battery Counter, Coolant SV, Standby RF) where $\max - \min \approx 0$ as legitimate signals, preventing false anomaly flags.
+  * **Recommendation Notes**: Attaches detailed cell notes indicating exact *Nilai Rekomendasi* (recommended normal values) and maintains a historical audit trail (*Nilai Lama* $\rightarrow$ *Nilai Baru*) upon auto-repair.
+  * **PLN Electrical Standard Validation**: Implements strict checks for power factor ($\cos\varphi \ge 0.85$), frequency ($50\text{ Hz} \pm 1\%$), voltage thresholds (220V/380V), and 3-Phase active power correlation ($P = 3 \times V_{\text{avg}} \times I_{\text{avg}} \times \cos\varphi / 1000$).
+  * **Automated Sheet Creation & Archival**: 1-click dynamic generation of monthly/daily archive tabs (`BACKUP_BULAN_YYYYMM`, `BACKUP_TGL_YYYYMMDD`, `BACKUP_LENGKAP_...`) with automatic header copying, row freezing, and in-memory master row purging.
 * **Statistical Outlier Detection (`01-master-metering/anomaly_detection.js`)**:
   * Rolling window ($N=3$) Z-Score algorithm ($\mu \pm 2.5\sigma$) with minimum absolute threshold filters ($\Delta \ge 2.0$) to highlight anomalous telemetry spikes.
   * Batch visual alerts via a single `range.setBackgrounds()` API call.
@@ -180,6 +188,7 @@ telemetry-workflow-automation/
 ├── apps-script/                               # Google Apps Script enterprise modules
 │   ├── 01-master-metering/
 │   │   ├── master_metering_suite.js           # Multi-sheet statistical pattern engine & shift recovery (v17.0)
+│   │   ├── master_response_met_suite.js       # Master response MET audit, PLN compliance, & auto-sheet backup (v8.5)
 │   │   ├── anomaly_detection.js               # Z-Score outlier & missing cell scanner
 │   │   ├── fast_backup_engine.js              # High-speed in-memory retention engine
 │   │   └── telemetry_excel_multitemplate_backup.js # Multi-template fast Excel backup & cron triggers
@@ -226,6 +235,7 @@ telemetry-workflow-automation/
 │
 └── tests/                                     # Automated test suites (node --test)
     ├── anomaly-detection.test.js              # Unit tests for statistical anomaly detection
+    ├── master-response-met.test.js            # Unit tests for master response MET suite v8.5
     ├── n8n-workflows.test.js                  # Structural integrity tests for all n8n workflows
     ├── ocr-heuristics.test.js                 # OCR character correction and bounds tests
     └── shift-matrix.test.js                   # Schedule matrix & key generation tests
