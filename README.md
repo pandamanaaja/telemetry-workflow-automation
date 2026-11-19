@@ -124,6 +124,19 @@ flowchart TD
 * **Parallel Dual-Drive Storage & Auto-Purge**: Simultaneously uploads exported `.xlsx` files to two distinct Google Drive backup directories in parallel, then permanently purges the temporary cloned Google Spreadsheet via Drive API (`HTTP 204 No Content`).
 * **Automated Schedule Triggers in n8n**: Offloads automated scheduling from Apps Script to n8n Schedule Triggers (Daily at 05:00 WIB, Weekly on Sunday at 06:00 WIB, Monthly on 7th at 07:00 WIB) with direct Google Sheets REST API ingestion (0.3s), completely eliminating 360-second headless execution timeouts on 30MB+ spreadsheets while keeping the Google Sheets UI menu for on-demand manual triggers.
 
+### 7. 📅 Bi-Monthly Attendance & Technician Roster Dual-Report Engine (`n8n-workflows/09-attendance-and-schedule-report-automation.json` & `apps-script/04-schedule-operations/`)
+* **Realtime Master Spreadsheet Auto-Synchronization**:
+  * Eliminates hardcoded month parameters in automation workflows by dynamically inspecting the master scheduling spreadsheet (`Rumus Warna` cell `B1` and `Draft Jadwal` cells `C2:C3`).
+  * Seamlessly processes whichever month and year is actively staged on the master sheet (e.g. February, March, August) without requiring manual workflow modifications.
+* **Dual-Report Atomic Generation**:
+  * **Period 1 (1–15)**: Triggered on the 16th at 08:00 WIB $\rightarrow$ clones and isolates official template tab GID `1811891430` (`Copy of 1 - 15`), purging opposing period tabs while retaining supporting lookup tabs.
+  * **Period 2 (16–28/29/30/31)**: Triggered on the 28th at 08:00 WIB $\rightarrow$ clones and isolates official template tab GID `89720944` (`Copy of 16 - 31`), adjusting dynamically for 28, 29, 30, or 31 active days.
+  * **Standalone Work Schedule File**: Clones official template tab GID `1975171563` (`Draft Jadwal`) into an independent workbook while safely hiding supporting lookup sheets (`Rumus Warna`) to prevent `#REF!` formula breaks.
+* **Protected Master Sheet Architecture (`technician_schedule_matrix.js`)**:
+  * **Target Sheet Hard-Locking**: Strictly directs roster matrix parsing, color-to-shift code translation (e.g. `C15`, `C31`, `C47`, `C01`, `OFF`, `CUTI`), and daily deployment tables exclusively into tab `Rumus Warna`, permanently safeguarding the master template structure from accidental overwrites.
+  * **Strict Vertical Transpose**: Automatically structures transposed daily assignments into a standard vertical matrix ($N$ Days $\times$ 9 Technicians) for immediate formula lookup.
+  * **1-Click Master Tab Recovery**: Built-in `pulihkanDraftJadwal()` utility resets and reconstructs rows 4–19 of `Draft Jadwal` with live dynamic formulas linking to `Rumus Warna`.
+
 ---
 
 ## 📖 Domain Nomenclature & Industrial Terminology
@@ -195,7 +208,8 @@ telemetry-workflow-automation/
 │   ├── 05-pln-gemini-ocr-sheet-builder.json   # Multi-customer PLN Gemini OCR & auto report builder
 │   ├── 06-pln-finalize-pdf-cloudconvert.json  # CloudConvert 3-PDF merger variant
 │   ├── 07-pln-finalize-pdf-local-pdflib.json  # Local pdf-lib 4-PDF merger with Auto Hitung (v16.0)
-│   └── 08-telemetry-excel-multitemplate-backup.json # High-speed multi-template Excel backup engine
+│   ├── 08-telemetry-excel-multitemplate-backup.json # High-speed multi-template Excel backup engine
+│   └── 09-attendance-and-schedule-report-automation.json # Bi-monthly attendance & technician schedule generation workflow
 │
 ├── apps-script/                               # Google Apps Script enterprise modules
 │   ├── 01-master-metering/
@@ -215,7 +229,8 @@ telemetry-workflow-automation/
 │   │   ├── duplicate_processor.js             # Composite-key deduplication processor
 │   │   └── master_response_dedup_checker.js   # Master response deduplication and normalization
 │   ├── 04-schedule-operations/
-│   │   └── technician_schedule_matrix.js      # Roster matrix normalizer & transpose generator
+│   │   ├── technician_schedule_matrix.js      # [UPDATED] Roster matrix normalizer, vertical transpose & master recovery engine
+│   │   └── attendance_and_schedule_report_engine.js # Automated attendance & work schedule dual-report Web App engine (Auto-Sync)
 │   ├── 05-gmail-automation/
 │   │   └── email_sorting_engine.js            # Automated multi-criteria email routing engine
 │   ├── 06-form-webhooks/

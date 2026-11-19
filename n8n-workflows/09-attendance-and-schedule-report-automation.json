@@ -1,0 +1,308 @@
+{
+  "name": "09-attendance-and-schedule-report-automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 16 * *"
+            }
+          ]
+        }
+      },
+      "id": "2360df5e-0f3a-4885-96df-90871a43e485",
+      "name": "Trigger Tgl 16 (08.00 WIB) - Periode 1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 28 * *"
+            }
+          ]
+        }
+      },
+      "id": "009e7f04-4375-441c-a471-e130cbb5d764",
+      "name": "Trigger Tgl 28 (08.00 WIB) - Periode 2",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Set Periode 1 (1 - 15)\n// Bulan & tahun otomatis mengikuti data yang aktif di Master Spreadsheet\nreturn [{\n  json: {\n    action: 'create_absensi_file',\n    period: 'FIRST',\n    mode: 'PRODUCTION'\n  }\n}];"
+      },
+      "id": "33227ec3-4078-42d0-9714-27b05f801ea1",
+      "name": "Cek Tanggal WIB - 16 atau 28",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Set Periode 2 (16 - Akhir Bulan)\n// Bulan & tahun otomatis mengikuti data yang aktif di Master Spreadsheet\nreturn [{\n  json: {\n    action: 'create_absensi_file',\n    period: 'SECOND',\n    mode: 'PRODUCTION'\n  }\n}];"
+      },
+      "id": "2d0b6352-4d26-4d62-a1a6-e11b2c3843a1",
+      "name": "Set Periode 2 (16 - Akhir Bulan)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        880
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "19bcd53e-454c-40e8-a7f6-dc760ba3d3e5",
+      "name": "Tombol Tarik Manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        2880,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================================\n// 🛠️ ATUR BULAN & PERIODE YANG INGIN DITARIK MANUAL:\n// ========================================================\n// Opsi 1: Otomatis ikuti bulan di Master Spreadsheet (DEFAULT)\nconst PERIODE = 'FIRST';   // 'FIRST' (1-15) atau 'SECOND' (16-Akhir Bulan)\n\nreturn [{\n  json: {\n    action: 'create_absensi_file',\n    period: PERIODE,\n    mode: 'MANUAL_TEST',\n    force_recreate: true  // Selalu buat file baru segar saat test\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        1056
+      ],
+      "id": "6dc9c3eb-29e3-4012-84de-7c790b459bd2",
+      "name": "Pilih Bulan & Periode (Manual)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-url",
+              "name": "web_app_url",
+              "type": "string",
+              "value": "={{ $env.ATTENDANCE_WEB_APP_URL || 'https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec' }}"
+            },
+            {
+              "id": "assign-token",
+              "name": "token",
+              "type": "string",
+              "value": "={{ $env.ATTENDANCE_API_TOKEN || 'YOUR_API_TOKEN' }}"
+            },
+            {
+              "id": "assign-action",
+              "name": "action",
+              "value": "={{ $json.action }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-period",
+              "name": "period",
+              "value": "={{ $json.period }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-mode",
+              "name": "mode",
+              "value": "={{ $json.mode || 'MANUAL_TEST' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-force",
+              "name": "force_recreate",
+              "value": "={{ $json.force_recreate || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "48326201-b0c5-4c34-917a-f43d7cdde890",
+      "name": "KONFIG - URL Web App",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3456,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nif (typeof d.web_app_url !== 'string' || !d.web_app_url.trim() || d.web_app_url.includes('YOUR_WEB_APP_ID')) {\n  throw new Error('Masukkan URL Web App Google Apps Script pada environment atau node KONFIG.');\n}\nreturn $input.all();"
+      },
+      "id": "997e494c-8460-4e20-aa8e-de8fb40c100b",
+      "name": "Validasi URL Web App",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.web_app_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({action: $json.action, token: $json.token, period: $json.period, mode: $json.mode, force_recreate: $json.force_recreate}) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 10
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "f1619dca-b9e2-4bf6-a8dd-600dbf458e07",
+      "name": "POST Apps Script - Buat File Baru",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3888,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nif (d.ok !== true) {\n  throw new Error('Apps Script gagal: ' + (d.error || d.status || 'unknown'));\n}\nif (d.status === 'skipped') {\n  return [{ json: { status: 'skipped', message: d.note || 'Bukan jadwal pembuatan laporan.' } }];\n}\nreturn [{\n  json: {\n    status: d.status,\n    file_name: d.file_name,\n    file_id: d.file_id,\n    file_url: d.file_url,\n    sheet_url: d.sheet_url || d.file_url,\n    periode: d.periode || null,\n    employees_processed: d.employees_processed ?? null,\n    rows_processed: d.rows_processed ?? null,\n    message: d.status === 'created' ? 'File laporan baru berhasil dibuat otomatis!' : 'File sudah ada; tidak diubah.'\n  }\n}];"
+      },
+      "id": "179ff9d7-f35a-4637-a05a-c21b8282c7dc",
+      "name": "Validasi Hasil dan Link File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4112,
+        880
+      ]
+    }
+  ],
+  "connections": {
+    "Trigger Tgl 16 (08.00 WIB) - Periode 1": {
+      "main": [
+        [
+          {
+            "node": "Cek Tanggal WIB - 16 atau 28",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Tgl 28 (08.00 WIB) - Periode 2": {
+      "main": [
+        [
+          {
+            "node": "Set Periode 2 (16 - Akhir Bulan)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Tanggal WIB - 16 atau 28": {
+      "main": [
+        [
+          {
+            "node": "KONFIG - URL Web App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Periode 2 (16 - Akhir Bulan)": {
+      "main": [
+        [
+          {
+            "node": "KONFIG - URL Web App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tombol Tarik Manual": {
+      "main": [
+        [
+          {
+            "node": "Pilih Bulan & Periode (Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pilih Bulan & Periode (Manual)": {
+      "main": [
+        [
+          {
+            "node": "KONFIG - URL Web App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KONFIG - URL Web App": {
+      "main": [
+        [
+          {
+            "node": "Validasi URL Web App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi URL Web App": {
+      "main": [
+        [
+          {
+            "node": "POST Apps Script - Buat File Baru",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST Apps Script - Buat File Baru": {
+      "main": [
+        [
+          {
+            "node": "Validasi Hasil dan Link File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "attendance-workflow-v5-safe"
+  }
+}

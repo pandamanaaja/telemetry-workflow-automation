@@ -13,7 +13,8 @@ describe('n8n Workflow Structure & Integrity Validation', () => {
     '05-pln-gemini-ocr-sheet-builder.json',
     '06-pln-finalize-pdf-cloudconvert.json',
     '07-pln-finalize-pdf-local-pdflib.json',
-    '08-telemetry-excel-multitemplate-backup.json'
+    '08-telemetry-excel-multitemplate-backup.json',
+    '09-attendance-and-schedule-report-automation.json'
   ];
 
   workflowFiles.forEach(fileName => {
